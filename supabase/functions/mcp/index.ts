@@ -295,7 +295,7 @@ function buildServer(sub: string): McpServer {
       "Crée une organisation = un périmètre de partage (mission/client, perso) ; tu en deviens admin. " +
       "Enchaîne avec mem_create_workspace({org}) pour y créer des KB. Slug dérivé du nom sauf si fourni.",
     inputSchema: {
-      name: z.string().describe("nom lisible, ex: Open Kairos"),
+      name: z.string().describe("nom lisible, ex: Demo KB"),
       slug: z.string().optional().describe("slug souhaité ; défaut = dérivé du nom"),
     },
   }, guarded(async (args) => json(await createOrg(sub, args))));

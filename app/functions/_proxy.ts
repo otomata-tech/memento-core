@@ -7,8 +7,7 @@
 // on retire le Host entrant et fetch() le redérive de l'URL cible. Le corps et la
 // réponse sont streamés tels quels — équivaut au flush_interval -1 de Caddy (SSE).
 
-// Remplace par l'URL de TON projet Supabase (https://<ref>.supabase.co).
-const SUPABASE = "https://YOUR_PROJECT.supabase.co";
+const SUPABASE = "https://YOUR_PROJECT.supabase.co"; // ← URL de ton projet Supabase
 
 export function proxyTo(targetPath: string, request: Request, keepSearch: boolean): Promise<Response> {
   const url = new URL(request.url);

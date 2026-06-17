@@ -2,7 +2,7 @@
 //   mento.cc / www.mento.cc → site vitrine (landing publique : /, /plugin)
 //   me.mento.cc             → app (viewer + login + oauth) — canonique
 //   mcp.mento.cc            → endpoint MCP (pas de SPA humaine)
-// Dev (memento.dev, localhost) et transition se comportent comme l'app complète.
+// Dev (memento.dev, localhost) et transition (mento.cc, base.mento.cc) se comportent comme l'app complète.
 const SITE_HOSTS = new Set(["mento.cc", "www.mento.cc"]);
 
 /** Origine de l'app — cible des redirections depuis le site vitrine. */

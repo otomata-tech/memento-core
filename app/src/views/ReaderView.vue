@@ -10,6 +10,7 @@ import SectionSpine from "../components/SectionSpine.vue";
 import BlockRow from "../components/BlockRow.vue";
 import BlockDossier from "../components/BlockDossier.vue";
 import DoctrinePanel from "../components/DoctrinePanel.vue";
+import AgentChat from "../components/AgentChat.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -27,6 +28,8 @@ const q = ref("");
 const loading = ref(false);
 const error = ref<string | null>(null);
 const showDoctrine = ref(false);
+const showAgent = ref(false);
+const isPublicKb = ref(false); // le mode agent n'est offert que sur les KB publiques
 
 async function reloadDoctrine() {
   doctrine.value = await api.doctrine(ws.value);
@@ -79,6 +82,8 @@ async function syncFromRoute() {
         api.doctrine(nextWs),
         loadRevisions(nextWs),
       ]);
+      isPublicKb.value = await api.public.workspaces()
+        .then((list) => list.some((w) => w.slug === nextWs)).catch(() => false);
       sectionDocs.value = []; activeSectionId.value = null; doc.value = null;
     }
 
@@ -171,5 +176,20 @@ watch(() => route.fullPath, syncFromRoute, { immediate: true });
 
     <DoctrinePanel v-if="showDoctrine && doctrine" :workspace="ws" :doctrine="doctrine"
       @close="showDoctrine = false" @saved="reloadDoctrine" />
+
+    <!-- Mode agent (KB publiques uniquement) -->
+    <button v-if="isPublicKb && !showAgent" class="agent-fab" @click="showAgent = true">✦ Demander à l'agent</button>
+    <AgentChat v-if="showAgent && doctrine" :workspace="ws" :kb-name="doctrine.workspace.name"
+      @close="showAgent = false" />
   </AppShell>
 </template>
+
+<style scoped>
+.agent-fab {
+  position: fixed; right: 22px; bottom: 22px; z-index: 400;
+  font: inherit; font-size: 13px; font-weight: 600; padding: 11px 18px;
+  background: var(--color-primary); color: var(--color-surface);
+  border: 2px solid var(--color-ink); box-shadow: 4px 4px 0 var(--color-hair-soft); cursor: pointer;
+}
+.agent-fab:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0 var(--color-hair-soft); }
+</style>

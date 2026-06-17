@@ -10,9 +10,8 @@
 import { sql } from "drizzle-orm";
 import { db, memberships } from "./db.ts";
 
-// Map optionnel sub (uuid Supabase) → email, pour un affichage lisible en local.
-// Renseigne tes propres users ; sinon un email `<sub>@local.invalid` est généré.
-const KNOWN: Record<string, string> = {};
+const KNOWN: Record<string, string> = {
+};
 
 await db.execute(sql`create schema if not exists auth`);
 await db.execute(sql`create table if not exists auth.users (id uuid primary key, email text)`);

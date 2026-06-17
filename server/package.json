@@ -1,7 +1,7 @@
 {
   "name": "memento-tooling",
   "version": "1.0.0",
-  "description": "Outillage Node de Memento : schéma Drizzle canonique + migrations, seed, admin. Le runtime prod est Deno (supabase/functions/).",
+  "description": "Outillage Node de Memento : schéma Drizzle canonique + migrations, seed, import, admin. Le runtime prod est Deno (supabase/functions/).",
   "scripts": {
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/migrate.ts",

@@ -175,3 +175,59 @@ export const api = {
       get<{ hits: PublicSearchHit[]; total: number; hasMore: boolean }>("/public/search", { q, maxHits }),
   },
 };
+
+// ── Mode agent (chat sur une KB publique) — function `agent`, SSE ──
+// Surface séparée du REST (/api) : streaming sur /agent/chat, sans auth.
+export type AgentEvent =
+  | { type: "token"; text: string }
+  | { type: "status"; tool: string }
+  | { type: "done"; steps: number }
+  | { type: "error"; message: string };
+
+export type AgentChatMessage = { role: "user" | "assistant"; content: string };
+
+/** POST /agent/chat en SSE. Appelle `onEvent` au fil de l'eau (token/status/done/error). */
+export async function agentChat(
+  workspace: string,
+  message: string,
+  history: AgentChatMessage[],
+  onEvent: (ev: AgentEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch("/agent/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json", "accept": "text/event-stream" },
+    body: JSON.stringify({ workspace, message, history }),
+    signal,
+  });
+  if (!res.ok || !res.body) {
+    let msg = `agent → ${res.status}`;
+    try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch { /* corps non-JSON */ }
+    throw new Error(msg);
+  }
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += value;
+    const chunks = buf.split("\n\n");
+    buf = chunks.pop() ?? "";
+    for (const chunk of chunks) {
+      let event = "message";
+      let data = "";
+      for (const line of chunk.split("\n")) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        else if (line.startsWith("data:")) data += line.slice(5).trim();
+      }
+      if (!data) continue;
+      try {
+        const payload = JSON.parse(data);
+        if (event === "token") onEvent({ type: "token", text: payload.text ?? "" });
+        else if (event === "status") onEvent({ type: "status", tool: payload.tool ?? "" });
+        else if (event === "done") onEvent({ type: "done", steps: payload.steps ?? 0 });
+        else if (event === "error") onEvent({ type: "error", message: payload.message ?? "erreur" });
+      } catch { /* chunk partiel/non-JSON, ignoré */ }
+    }
+  }
+}

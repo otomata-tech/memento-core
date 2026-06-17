@@ -153,7 +153,6 @@ enabled = true
 # in emails.
 site_url = "http://localhost:5173"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-# Adapte à tes domaines (ex. https://app.example.com/oauth/consent et /callback).
 additional_redirect_urls = ["http://localhost:5173/oauth/consent", "http://localhost:5173/callback"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
@@ -399,4 +398,10 @@ verify_jwt = false
 # anonymes doivent atteindre le handler pour servir la surface PUBLIQUE (KB
 # `public` : /public/*, et lecture des KB publiques gardée par assertAccess). Les
 # mutations exigent toujours un token valide (cf. index.ts). /health reste ouvert.
+verify_jwt = false
+
+[functions.agent]
+# Mode agent (chat) d'une KB PUBLIQUE : surface anonyme par nature. Le handler ne
+# sert que les KB `public` et applique ses propres garde-fous (rate-limit IP +
+# budget tokens). Les appels doivent atteindre le handler sans JWT plateforme.
 verify_jwt = false

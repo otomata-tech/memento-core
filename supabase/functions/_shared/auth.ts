@@ -7,7 +7,7 @@
  *
  * Env :
  *   MEMENTO_AUTH_URL     ex. https://<ref>.supabase.co/auth/v1  (issuer + JWKS)
- *   MEMENTO_PUBLIC_URL    base publique du MCP, ex. https://mcp.mento.cc
+ *   MEMENTO_PUBLIC_URL    base publique du MCP, ex. https://mento.cc
  *   MEMENTO_ALLOWED_EMAILS (optionnel) allowlist d'emails, séparés par virgule
  */
 import { createRemoteJWKSet, jwtVerify } from "https://esm.sh/jose@5.9.6";
