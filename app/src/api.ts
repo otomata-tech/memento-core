@@ -196,7 +196,7 @@ export async function agentChat(
 ): Promise<void> {
   const res = await fetch("/agent/chat", {
     method: "POST",
-    headers: { "content-type": "application/json", "accept": "text/event-stream" },
+    headers: { ...(await authHeader()), "content-type": "application/json", "accept": "text/event-stream" },
     body: JSON.stringify({ workspace, message, history }),
     signal,
   });

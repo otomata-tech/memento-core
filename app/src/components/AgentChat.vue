@@ -1,12 +1,17 @@
 <script setup lang="ts">
-// Mode agent : chat sur une KB publique. Drawer latéral, réponses streamées (SSE)
-// depuis la function `agent`. L'agent répond à partir du contenu de la base, et de
-// lui seul (cf. supabase/functions/agent).
+// Mode agent : chat sur une KB. Réponses streamées (SSE) depuis la function `agent`.
+// Deux présentations (même logique) : `drawer` (overlay latéral, dans le viewer) et
+// `page` (plein écran, route /w/:ws/agent). L'agent répond à partir du contenu de la
+// base, et de lui seul (cf. supabase/functions/agent).
 import { nextTick, ref } from "vue";
 import { agentChat, type AgentChatMessage } from "../api";
 import { renderMd } from "../lib/blocks";
 
-const props = defineProps<{ workspace: string; kbName: string }>();
+const props = withDefaults(defineProps<{
+  workspace: string;
+  kbName: string;
+  variant?: "drawer" | "page";
+}>(), { variant: "drawer" });
 const emit = defineEmits<{ (e: "close"): void }>();
 
 type Msg = { role: "user" | "assistant"; content: string };
@@ -57,14 +62,15 @@ function onKey(e: KeyboardEvent) {
 </script>
 
 <template>
-  <div class="ag-overlay" @click.self="emit('close')">
-    <div class="ag-panel">
+  <div :class="['ag-root', variant === 'drawer' ? 'ag-overlay' : 'ag-page']"
+    @click.self="variant === 'drawer' && emit('close')">
+    <div class="ag-panel" :class="`ag-panel--${variant}`">
       <div class="ag-head">
         <div>
           <div class="eb">✦ Agent · {{ kbName }}</div>
           <h2 class="ag-title">Demander à la base</h2>
         </div>
-        <button class="btn" @click="emit('close')">✕</button>
+        <button v-if="variant === 'drawer'" class="btn" @click="emit('close')">✕</button>
       </div>
 
       <div ref="bodyEl" class="ag-body">
@@ -91,8 +97,15 @@ function onKey(e: KeyboardEvent) {
 </template>
 
 <style scoped>
+/* Présentation drawer : overlay latéral droit (dans le viewer) */
 .ag-overlay { position: fixed; inset: 0; z-index: 500; background: rgba(44, 33, 18, 0.32); display: flex; justify-content: flex-end; }
-.ag-panel { width: 100%; max-width: 460px; height: 100%; display: flex; flex-direction: column; background: var(--color-surface); border-left: 2px solid var(--color-ink); box-shadow: -8px 0 0 var(--color-hair-soft); }
+.ag-panel--drawer { max-width: 460px; border-left: 2px solid var(--color-ink); box-shadow: -8px 0 0 var(--color-hair-soft); }
+/* Présentation page : plein écran, panneau centré lisible */
+.ag-page { height: 100%; min-height: 100vh; display: flex; justify-content: center; background: var(--color-bg); }
+.ag-panel--page { max-width: 760px; border-left: 1px solid var(--color-hair); border-right: 1px solid var(--color-hair); }
+
+.ag-panel { width: 100%; height: 100%; min-height: 0; display: flex; flex-direction: column; background: var(--color-surface); }
+.ag-page .ag-panel { height: 100vh; }
 .ag-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 22px; border-bottom: 1px solid var(--color-hair); background: var(--color-primary-soft); }
 .ag-title { font-family: var(--font-display); font-size: 20px; font-weight: 700; letter-spacing: -0.02em; margin: 2px 0 0; color: var(--color-primary-ink); }
 .ag-body { flex: 1; overflow-y: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 14px; }

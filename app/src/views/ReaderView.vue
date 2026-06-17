@@ -29,7 +29,11 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const showDoctrine = ref(false);
 const showAgent = ref(false);
-const isPublicKb = ref(false); // le mode agent n'est offert que sur les KB publiques
+// Le mode agent est offert sur une KB publique (anonyme) OU à un utilisateur connecté
+// (le backend agent vérifie l'accès réel ; le viewer ne montre que ce qu'il sait lire).
+const isPublicKb = ref(false);
+const isLoggedIn = ref(false);
+const agentAvailable = computed(() => isPublicKb.value || isLoggedIn.value);
 
 async function reloadDoctrine() {
   doctrine.value = await api.doctrine(ws.value);
@@ -84,6 +88,7 @@ async function syncFromRoute() {
       ]);
       isPublicKb.value = await api.public.workspaces()
         .then((list) => list.some((w) => w.slug === nextWs)).catch(() => false);
+      isLoggedIn.value = !!(await supabase.auth.getSession()).data.session;
       sectionDocs.value = []; activeSectionId.value = null; doc.value = null;
     }
 
@@ -178,7 +183,7 @@ watch(() => route.fullPath, syncFromRoute, { immediate: true });
       @close="showDoctrine = false" @saved="reloadDoctrine" />
 
     <!-- Mode agent (KB publiques uniquement) -->
-    <button v-if="isPublicKb && !showAgent" class="agent-fab" @click="showAgent = true">✦ Demander à l'agent</button>
+    <button v-if="agentAvailable && !showAgent" class="agent-fab" @click="showAgent = true">✦ Demander à l'agent</button>
     <AgentChat v-if="showAgent && doctrine" :workspace="ws" :kb-name="doctrine.workspace.name"
       @close="showAgent = false" />
   </AppShell>

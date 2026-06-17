@@ -27,6 +27,8 @@ const routes: RouteRecordRaw[] = [
   { path: "/w/:ws", component: () => import("./views/ReaderView.vue") },
   { path: "/w/:ws/doc/:id", component: () => import("./views/ReaderView.vue") },
   { path: "/w/:ws/search", component: () => import("./views/ReaderView.vue") },
+  // Mode agent — chat plein écran (standalone) sur la KB
+  { path: "/w/:ws/agent", component: () => import("./views/AgentView.vue") },
   // Graphe
   { path: "/w/:ws/graph", component: () => import("./views/GraphView.vue") },
   { path: "/w/:ws/graph/:blockId", component: () => import("./views/GraphView.vue") },
