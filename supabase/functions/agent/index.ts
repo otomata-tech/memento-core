@@ -14,7 +14,9 @@
 import { corsHeaders, jsonRes } from "../_shared/http.ts";
 import { getDoctrine } from "../_shared/workspaces.ts";
 import { hybridSearch } from "../_shared/search.ts";
-import { publicWorkspaceRefs } from "../_shared/access.ts";
+import { accessibleWorkspaceIds, publicWorkspaceRefs } from "../_shared/access.ts";
+import { resolveWorkspaceBySlug } from "../_shared/paths.ts";
+import { authenticate } from "../_shared/auth.ts";
 import { assertWithinLimitByKey, currentUsage, LIMITS, RateLimitError, recordUsage } from "../_shared/ratelimit.ts";
 
 const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY") ?? "";
@@ -67,6 +69,18 @@ async function searchKb(ws: PublicRef, q: string): Promise<unknown> {
     url: h.url ?? null,
   }));
   return { hits, count: hits.length };
+}
+
+/** KB ciblable par l'agent : publique (anonyme ou connecté) OU accessible à
+ *  l'utilisateur connecté. null si introuvable ou hors d'atteinte (→ 404 indistinct,
+ *  pas d'oracle d'existence). */
+async function resolveKb(slug: string, sub: string): Promise<PublicRef | null> {
+  let wsId: string;
+  try { wsId = (await resolveWorkspaceBySlug(slug)).id; } catch { return null; }
+  const pub = (await publicWorkspaceRefs()).find((r) => r.id === wsId);
+  if (pub) return pub;
+  if (sub && (await accessibleWorkspaceIds(sub)).includes(wsId)) return { id: wsId, slug, org: null };
+  return null;
 }
 
 function buildSystemPrompt(doctrine: Awaited<ReturnType<typeof getDoctrine>>): string {
@@ -279,9 +293,12 @@ Deno.serve({ port: Number(Deno.env.get("PORT") ?? 8000) }, async (req) => {
     return jsonRes({ error: "service momentanément indisponible (quota journalier atteint)" }, 503, cors);
   }
 
-  // Sécurité : l'agent ne sert QUE des KB publiques. Privée/inconnue → 404 indistinct.
-  const ws = (await publicWorkspaceRefs()).find((r) => r.slug === workspace);
-  if (!ws) return jsonRes({ error: "KB introuvable ou non publique" }, 404, cors);
+  // Accès : KB publique (anonyme/connecté) OU KB accessible à l'utilisateur connecté
+  // (Bearer forwardé par le proxy). Sinon 404 indistinct.
+  const auth = await authenticate(req);
+  const sub = auth.ok ? (auth.claims.sub ?? "") : "";
+  const ws = await resolveKb(workspace, sub);
+  if (!ws) return jsonRes({ error: "KB introuvable ou inaccessible" }, 404, cors);
 
   const history = Array.isArray(body.history) ? body.history : [];
   const wantsSSE = (req.headers.get("accept") ?? "").includes("text/event-stream");
