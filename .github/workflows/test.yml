@@ -1,0 +1,62 @@
+name: Tests
+
+# Tests d'intégration des Edge Functions (deno test) contre un Postgres réel.
+# Le schéma mem_* est appliqué via les migrations Drizzle (server/drizzle, 0015 inclus) ;
+# le schéma auth.users est provisionné par les tests eux-mêmes (cf. seedUser).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/**"
+      - "server/**"
+      - ".github/workflows/test.yml"
+  pull_request:
+    paths:
+      - "supabase/**"
+      - "server/**"
+      - ".github/workflows/test.yml"
+  workflow_dispatch:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # pgvector préinstallé : la migration embeddings (#10) fait `CREATE EXTENSION vector`.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: tuls
+          POSTGRES_PASSWORD: tuls-dev
+          POSTGRES_DB: memento
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://tuls:tuls-dev@localhost:5432/memento
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+      # On matérialise le schéma TS canonique (drizzle-kit push) plutôt que la chaîne
+      # de migrations SQL : celle-ci porte des étapes Supabase-only (pg_cron #0014,
+      # pgvector #0006) absentes d'un Postgres de CI. `push` crée toutes les tables
+      # mem_* dont les tests ont besoin, sans ces extensions. `--force` = non-interactif.
+      - name: Provision schema (drizzle push)
+        working-directory: server
+        run: |
+          npm ci
+          npx drizzle-kit push --force
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: deno test
+        working-directory: supabase/functions
+        run: deno test --allow-env --allow-net --allow-read _shared/

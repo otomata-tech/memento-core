@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-64 -64 128 128"><defs>
+  <radialGradient id="saff" cx="38%" cy="32%" r="78%"><stop offset="0%" stop-color="#ffd24a"/><stop offset="55%" stop-color="#f0b41e"/><stop offset="100%" stop-color="#c4870c"/></radialGradient>
+  <radialGradient id="terr" cx="38%" cy="32%" r="78%"><stop offset="0%" stop-color="#f56a2d"/><stop offset="55%" stop-color="#d63d0a"/><stop offset="100%" stop-color="#9c2c06"/></radialGradient>
+  <radialGradient id="oliv" cx="38%" cy="32%" r="78%"><stop offset="0%" stop-color="#c0db4e"/><stop offset="55%" stop-color="#8aa620"/><stop offset="100%" stop-color="#5c7212"/></radialGradient>
+  <radialGradient id="cob" cx="38%" cy="32%" r="78%"><stop offset="0%" stop-color="#4f9be0"/><stop offset="55%" stop-color="#1f6dba"/><stop offset="100%" stop-color="#124a80"/></radialGradient>
+  <radialGradient id="otg" cx="38%" cy="32%" r="78%"><stop offset="0%" stop-color="#ffc835"/><stop offset="50%" stop-color="#f5a623"/><stop offset="100%" stop-color="#dc7a00"/></radialGradient></defs><path d="M-44 14 Q -22 -34, 0 2 T 44 -10" fill="none" stroke="url(#cob)" stroke-width="12" stroke-linecap="round"/></svg>

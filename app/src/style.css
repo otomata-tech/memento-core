@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+/* Tokens canoniques Otomata (cf. /data/websites/otomata-ui/THEME.md). Éditorial : pas de radius.
+   Déclarés en @theme → exposés à la fois comme var(--color-*) (styles scopés / editorial.css)
+   ET comme utilitaires Tailwind (bg-bg, text-ink, border-hair…). */
+@theme {
+  --color-bg: #fefcf5;
+  --color-surface: #ffffff;
+  --color-paper-2: #f4ecd2;
+  --color-paper-3: #ebe1ba;
+  --color-ink: #2c2112;
+  --color-ink-soft: #4a3a23;
+  --color-mute: #6c5e44;
+  --color-faint: #a89a78;
+  --color-hair: #dccfa8;
+  --color-hair-soft: #ece1bd;
+  --color-primary: #f0b41e;
+  --color-primary-soft: #fbe7a8;
+  --color-primary-ink: #5a3b03;
+  --color-strong-mid: #a8c926;
+  --color-strong-bg: #e6eec0;
+  --color-strong-ink: #3e4c0c;
+  --color-weak-mid: #e84b16;
+  --color-weak-bg: #f7cdbb;
+  --color-weak-ink: #621b04;
+  --color-accent: #2a87d8;
+  --color-accent-soft: #c4dcf0;
+  --font-display: "Bricolage Grotesque", system-ui, sans-serif;
+  --font-sans: "Hanken Grotesk", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  /* Éditorial : pas de coins arrondis. */
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+}
+
+* { box-sizing: border-box; }
+html, body, #app { height: 100%; margin: 0; }
+body {
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background: var(--color-bg);
+  font-size: 15px;
+  line-height: 1.55;
+}
+a { color: var(--color-accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button { font-family: inherit; cursor: pointer; }
+
+/* ── Globals partagés par les vues hors-éditorial (Admin / Login / Consent / Callback) ── */
+.brand { font-family: var(--font-display); font-weight: 700; font-size: 18px; letter-spacing: -0.02em; }
+.brand small { color: var(--color-mute); font-weight: 500; font-size: 13px; margin-left: 8px; }
+.topbar {
+  display: flex; align-items: center; gap: 24px;
+  padding: 14px 24px; border-bottom: 1px solid var(--color-hair);
+  background: var(--color-surface);
+}
+.eyebrow { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-mute); font-weight: 600; }
+h1.title { font-family: var(--font-display); font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 4px; }
+h2.title { font-family: var(--font-display); font-size: 20px; font-weight: 600; margin: 28px 0 10px; }
+.summary { color: var(--color-ink-soft); margin: 0 0 18px; }
+.card {
+  display: block; width: 100%; text-align: left; border: 1px solid var(--color-hair);
+  background: var(--color-surface); padding: 12px 14px; margin-bottom: 8px;
+}
+.card:hover { border-color: var(--color-primary); background: var(--color-bg); }
+.card .ct { font-weight: 600; }
+.card .cs { color: var(--color-mute); font-size: 13px; }
+.badge {
+  display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
+  padding: 2px 7px; text-transform: uppercase; font-family: var(--font-mono);
+  background: var(--color-paper-2); color: var(--color-mute);
+}
+.badge.kind { background: var(--color-paper-3); color: var(--color-ink-soft); }
+.muted { color: var(--color-mute); }

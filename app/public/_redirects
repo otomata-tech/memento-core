@@ -1,0 +1,3 @@
+# SPA fallback (history mode). Les Pages Functions (/mcp, /api/*, /.well-known/*) et les
+# assets statiques ont priorité ; ce 200-rewrite n'attrape que les routes Vue inconnues.
+/*    /index.html    200

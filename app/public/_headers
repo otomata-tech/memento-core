@@ -1,0 +1,8 @@
+# Headers de sécurité Cloudflare Pages (copiés tels quels à la racine de dist/).
+# Défense en profondeur : anti-clickjacking (la page /oauth/consent ne doit jamais
+# être iframée), anti-sniffing MIME, fuite de referrer limitée.
+/*
+  X-Frame-Options: DENY
+  Content-Security-Policy: frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
