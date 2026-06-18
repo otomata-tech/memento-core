@@ -19,6 +19,7 @@ import { getSection } from "../_shared/sections.ts";
 import { getDocument, getBlock } from "../_shared/documents.ts";
 import { hybridSearch, searchPublic } from "../_shared/search.ts";
 import { listItems, countItems } from "../_shared/list.ts";
+import { loadWorkspace, loadGate } from "../_shared/load.ts";
 import { neighborhood } from "../_shared/graph.ts";
 import { similarBlocks } from "../_shared/semantic.ts";
 import { resolveWorkspaceBySlug, resolveWorkspaceById, resolveSectionIds } from "../_shared/paths.ts";
@@ -91,7 +92,8 @@ DÉMARRAGE (important — le serveur est sans état) :
 
 PROTOCOLE doctrine-first : sur une KB ciblée, mem_doctrine (préambule + arbre + conventions)
 AVANT tout drill. Cible 2-3 sections, puis mem_section / mem_document / mem_block, ou
-mem_search (hybride : mots exacts + paraphrases). Ne charge jamais toute la base.
+mem_search (hybride : mots exacts + paraphrases). Pour LIRE/répondre, ne charge jamais
+toute la base (cible). Pour ÉCRIRE, c'est l'inverse — cf. CHARGER AVANT D'ÉCRIRE.
 
 ROUTAGE recherche vs énumération : mem_search est top-k, JAMAIS exhaustif. Pour
 « tout / lesquels / combien / quoi de neuf depuis » → mem_list / mem_count
@@ -100,6 +102,19 @@ ROUTAGE recherche vs énumération : mem_search est top-k, JAMAIS exhaustif. Pou
 ÉCRITURE : réservée aux rôles admin/curator de l'org. Ne mute jamais en aveugle —
 propose via mem_stage_changes (→ revue humaine), puis mem_apply_ingestion. Les
 contradictions ne sont jamais auto-appliquées.
+
+CHARGER AVANT D'ÉCRIRE : sur une KB de taille raisonnable, appelle mem_load(workspace)
+AVANT de proposer un mem_stage_changes — tu obtiens tout le contenu (+ un loadToken à
+repasser à mem_stage_changes). Ça t'évite les doublons, te fait placer le bloc au bon
+endroit, et te donne les blockId pour relier. Proposer sans charger est signalé (champ
+loadGate dans la réponse).
+
+LIENS (graphe) : quand le contenu chargé te fait voir une relation logique entre deux
+blocs — surtout CONTRADICTS (deux faits s'opposent), SUPERSEDES (l'un périme l'autre),
+DEPENDS_ON (l'un suppose l'autre) — pose le lien (op link_blocks dans ton
+mem_stage_changes) : les IDs sont déjà sous tes yeux. Ne spamme pas RELATED (la recherche
+couvre déjà l'adjacence de sujet) — vise ce qu'un futur lecteur DOIT voir. Explore
+l'existant avec mem_neighborhood avant de modifier un bloc très lié.
 
 FEEDBACK (quasi obligatoire) : dès que Memento te surprend — erreur inattendue,
 recherche qui rate un contenu qui devrait exister, verbe/capacité manquant,
@@ -339,6 +354,20 @@ function buildServer(sub: string): McpServer {
     const { workspace: ws, org } = await wsContext(sub, workspace);
     await assertAccess(sub, { workspace: ws });
     return json({ workspace: ws, org, ...(await getDoctrine(ws)) });
+  }));
+
+  server.registerTool("mem_load", {
+    description:
+      "Charge une KB EN ENTIER (tous les documents + le contenu de tous les blocs, ordonnés) — à appeler AVANT de proposer une écriture (mem_stage_changes) dans une KB de taille raisonnable. " +
+      "Te donne le contexte complet pour : éviter les doublons, placer ton bloc au bon endroit, et repérer les liens typés à poser (CONTRADICTS/SUPERSEDES/DEPENDS_ON). " +
+      "Renvoie un `loadToken` à repasser à mem_stage_changes (prouve que tu as chargé la version courante). " +
+      "Si la KB dépasse le seuil de taille (`loaded: false`), le chargement intégral n'est pas rendu : cible alors via mem_doctrine + mem_search/mem_list. `workspace` omis = KB par défaut.",
+    inputSchema: { workspace: z.string().optional().describe("slug de la KB ; omis = KB par défaut") },
+  }, guarded(async ({ workspace }) => {
+    const { workspace: ws, org } = await wsContext(sub, workspace);
+    await assertAccess(sub, { workspace: ws });
+    const wsId = await resolveWorkspaceId({ workspace: ws });
+    return json({ workspace: ws, org, ...(await loadWorkspace(wsId!)) });
   }));
 
   server.registerTool("mem_section", {
@@ -635,6 +664,7 @@ function buildServer(sub: string): McpServer {
       summary: z.string().optional(),
       sourceId: z.string().optional(),
       clientKey: z.string().optional().describe("clé d'idempotence (unique par workspace) — fournis-la pour des retries sûrs"),
+      loadToken: z.string().optional().describe("jeton rendu par mem_load — prouve que tu as chargé la KB avant d'écrire"),
       changes: z.array(z.object({
         op: z.string(),
         payload: z.record(z.string(), z.any()).optional(),
@@ -644,10 +674,13 @@ function buildServer(sub: string): McpServer {
       })).max(MAX_BATCH),
     },
   }, guarded(async (args) => {
-    const { workspace: _w, ...rest } = args;
+    const { workspace: _w, loadToken, ...rest } = args;
     const { workspace: ws, org } = await wsContext(sub, args.workspace);
     await assertAccess(sub, { workspace: ws }, { write: true });
-    return json({ workspace: ws, org, ...(await stageChanges({ ...rest, workspace: ws }, sub)) });
+    const wsId = await resolveWorkspaceId({ workspace: ws });
+    const gate = await loadGate(sub, wsId!, "mem_stage_changes", loadToken);
+    const staged = await stageChanges({ ...rest, workspace: ws }, sub);
+    return json({ workspace: ws, org, ...staged, ...(gate.warning ? { loadGate: gate.warning } : {}) });
   }));
 
   server.registerTool("mem_ingestion_list", {
