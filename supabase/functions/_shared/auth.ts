@@ -1,14 +1,14 @@
 /**
- * Garde d'authentification OAuth 2.1 (Supabase comme serveur d'autorisation).
+ * OAuth 2.1 authentication guard (Supabase as authorization server).
  *
- * La function est un *resource server* (RFC 9728) : elle vérifie elle-même les JWT
- * via le JWKS Supabase (ES256), advertise le serveur d'autorisation par le PRM, et
- * renvoie 401 + WWW-Authenticate quand le token manque/est invalide.
+ * The function is a *resource server* (RFC 9728): it verifies the JWTs itself via the
+ * Supabase JWKS (ES256), advertises the authorization server through the PRM, and
+ * returns 401 + WWW-Authenticate when the token is missing/invalid.
  *
- * Env :
- *   MEMENTO_AUTH_URL     ex. https://<ref>.supabase.co/auth/v1  (issuer + JWKS)
- *   MEMENTO_PUBLIC_URL    base publique du MCP, ex. https://mento.cc
- *   MEMENTO_ALLOWED_EMAILS (optionnel) allowlist d'emails, séparés par virgule
+ * Env:
+ *   MEMENTO_AUTH_URL     e.g. https://<ref>.supabase.co/auth/v1  (issuer + JWKS)
+ *   MEMENTO_PUBLIC_URL    public base of the MCP, e.g. https://mento.cc
+ *   MEMENTO_ALLOWED_EMAILS (optional) email allowlist, comma-separated
  */
 import { createRemoteJWKSet, jwtVerify } from "https://esm.sh/jose@5.9.6";
 
@@ -33,7 +33,7 @@ export type AuthResult =
 
 export async function authenticate(req: Request): Promise<AuthResult> {
   const m = (req.headers.get("authorization") ?? "").match(/^Bearer\s+(.+)$/i);
-  if (!m) return { ok: false, status: 401, message: "jeton Bearer manquant" };
+  if (!m) return { ok: false, status: 401, message: "missing Bearer token" };
 
   let claims: Claims;
   try {
@@ -43,23 +43,23 @@ export async function authenticate(req: Request): Promise<AuthResult> {
     });
     claims = payload as Claims;
   } catch {
-    return { ok: false, status: 401, message: "jeton invalide ou expiré" };
+    return { ok: false, status: 401, message: "invalid or expired token" };
   }
 
   if (claims.role !== "authenticated") {
-    return { ok: false, status: 403, message: "rôle non autorisé (clé anon refusée)" };
+    return { ok: false, status: 403, message: "unauthorized role (anon key refused)" };
   }
   const allow = Deno.env.get("MEMENTO_ALLOWED_EMAILS");
   if (allow && allow.trim()) {
     const list = allow.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
     if (!claims.email || !list.includes(claims.email.toLowerCase())) {
-      return { ok: false, status: 403, message: "utilisateur non autorisé" };
+      return { ok: false, status: 403, message: "unauthorized user" };
     }
   }
   return { ok: true, claims };
 }
 
-/** PRM RFC 9728 — désigne le serveur d'autorisation au client MCP. */
+/** PRM RFC 9728 — designates the authorization server to the MCP client. */
 export function protectedResourceMetadata() {
   return {
     resource: `${publicUrl()}/mcp`,
@@ -68,19 +68,19 @@ export function protectedResourceMetadata() {
   };
 }
 
-/** En-tête WWW-Authenticate pointant vers le PRM (déclenche le flow OAuth côté host). */
+/** WWW-Authenticate header pointing to the PRM (triggers the OAuth flow on the host side). */
 export function wwwAuthenticate(): string {
   return `Bearer resource_metadata="${publicUrl()}/.well-known/oauth-protected-resource"`;
 }
 
-/** Reconnaît les chemins de découverte servis sans auth. */
+/** Recognizes the discovery paths served without auth. */
 export function isDiscoveryPath(pathname: string): "prm" | "as" | null {
   if (/\/\.well-known\/oauth-protected-resource(\/mcp)?$/.test(pathname)) return "prm";
   if (/\/\.well-known\/oauth-authorization-server$/.test(pathname)) return "as";
   return null;
 }
 
-/** Proxy de la métadonnée du serveur d'autorisation Supabase (RFC 8414). */
+/** Proxy of the Supabase authorization server metadata (RFC 8414). */
 export async function authServerMetadata(): Promise<Response> {
   const r = await fetch(`${authUrl()}/.well-known/oauth-authorization-server`);
   return new Response(await r.text(), {

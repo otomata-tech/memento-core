@@ -1,7 +1,7 @@
 <script setup lang="ts">
-// Vue PLATEFORME — inventaire de tous les comptes auth (le signup est ouvert :
-// des comptes peuvent exister sans appartenir à aucune org). Réservée aux
-// opérateurs plateforme (MEMENTO_PLATFORM_ADMINS) ; les autres voient le refus.
+// PLATFORM view — inventory of all auth accounts (signup is open:
+// accounts may exist without belonging to any org). Restricted to
+// platform operators (MEMENTO_PLATFORM_ADMINS); others see the denial.
 import { onMounted, ref } from "vue";
 import { api, type PlatformAccount } from "../api";
 import AppShell from "../components/AppShell.vue";
@@ -23,16 +23,16 @@ onMounted(async () => {
 <template>
   <AppShell page="comptes" ws="">
     <div class="accounts">
-      <h1>Comptes</h1>
+      <h1>Accounts</h1>
       <p class="muted">
-        Tous les comptes de la plateforme — y compris ceux qui n'appartiennent à aucune
-        org (le signup est ouvert ; sans org, un compte ne voit aucune base).
+        All accounts on the platform — including those that don't belong to any
+        org (signup is open; without an org, an account sees no knowledge base).
       </p>
-      <p v-if="loading" class="muted">Chargement…</p>
+      <p v-if="loading" class="muted">Loading…</p>
       <p v-else-if="error" class="muted err">{{ error }}</p>
       <table v-else>
         <thead>
-          <tr><th>Email</th><th>Créé</th><th>Dernier login</th><th>Via</th><th>Orgs (rôle)</th></tr>
+          <tr><th>Email</th><th>Created</th><th>Last sign-in</th><th>Via</th><th>Orgs (role)</th></tr>
         </thead>
         <tbody>
           <tr v-for="a in accounts" :key="a.id" :class="{ orphan: !a.orgs }">
@@ -40,7 +40,7 @@ onMounted(async () => {
             <td>{{ day(a.createdAt) }}</td>
             <td>{{ day(a.lastSignInAt) }}</td>
             <td>{{ a.provider ?? "—" }}</td>
-            <td>{{ a.orgs ?? "aucune" }}</td>
+            <td>{{ a.orgs ?? "none" }}</td>
           </tr>
         </tbody>
       </table>

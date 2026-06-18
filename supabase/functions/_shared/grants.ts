@@ -1,13 +1,13 @@
 /**
- * Grants par KB (issue #60) : accès explicite d'un user à UNE base — élever un
- * membre (curator sur cette KB), restreindre via `visibility=private`, ou
- * inviter un externe (guest) sans l'entrer dans l'org.
+ * Per-KB grants (issue #60): explicit access of a user to ONE base — elevate a
+ * member (curator on this KB), restrict via `visibility=private`, or invite an
+ * external (guest) without entering them into the org.
  *
- * Un grant donne LECTURE (member) ou ÉCRITURE (curator) — jamais la gouvernance
- * (décision 2026-06-12) : partager/visibilité/transfert restent aux admins de
- * l'org propriétaire (assertWorkspaceAdmin). Invitation guest : même flux
- * d'invitation que les membres d'org (provision GoTrue + email Resend), seul
- * l'atterrissage change (grant au lieu de membership).
+ * A grant gives READ (member) or WRITE (curator) — never governance (decision
+ * 2026-06-12): sharing/visibility/transfer remain with the admins of the owning
+ * org (assertWorkspaceAdmin). Guest invitation: same invitation flow as org
+ * members (GoTrue provisioning + Resend email), only the landing changes (grant
+ * instead of membership).
  */
 import { and, eq } from "drizzle-orm";
 import { db, workspaces, workspaceGrants, orgs, memberships } from "./db.ts";
@@ -19,14 +19,14 @@ const ROLES = ["curator", "member"];
 
 async function wsBySlug(slug: string) {
   const [w] = await db.select().from(workspaces).where(eq(workspaces.slug, slug)).limit(1);
-  if (!w) throw new Error(`workspace introuvable: ${slug}`);
+  if (!w) throw new Error(`workspace not found: ${slug}`);
   return w;
 }
 
 /**
- * Le « qui a accès » complet d'une KB : visibilité, grants explicites, et accès
- * HÉRITÉS de l'org (membres + rôle d'org) quand visibility=org — sans quoi la
- * liste des grants seule est trompeuse. Pour le panneau Partager et mem_grants.
+ * The full "who has access" of a KB: visibility, explicit grants, and access
+ * INHERITED from the org (members + org role) when visibility=org — without which the
+ * grants list alone is misleading. For the Share panel and mem_grants.
  */
 export async function listGrants(sub: string, args: { workspace: string }) {
   await assertWorkspaceAdmin(sub, args.workspace);
@@ -54,8 +54,8 @@ export async function listGrants(sub: string, args: { workspace: string }) {
     visibility: w.visibility,
     grants: rows.map((g) => present(g.userId, g.role))
       .sort((a, b) => (a.email ?? a.userId).localeCompare(b.email ?? b.userId)),
-    // Hérités : membres de l'org propriétaire — accès effectif si org OU public
-    // (sinon, private : liste informative vide).
+    // Inherited: members of the owning org — effective access if org OR public
+    // (otherwise, private: empty informative list).
     inherited: w.visibility === "org" || w.visibility === "public"
       ? orgMembers.map((m) => present(m.userId, m.role))
           .sort((a, b) => (a.email ?? a.userId).localeCompare(b.email ?? b.userId))
@@ -64,15 +64,15 @@ export async function listGrants(sub: string, args: { workspace: string }) {
 }
 
 /**
- * Donne (ou met à jour) l'accès d'un user à UNE KB, par email. Compte inexistant →
- * provisionné + email d'invitation (flux GoTrue partagé avec les orgs).
+ * Grants (or updates) a user's access to ONE KB, by email. Nonexistent account →
+ * provisioned + invitation email (GoTrue flow shared with the orgs).
  */
 export async function grantAccess(
   sub: string,
   args: { workspace: string; email: string; role?: string },
 ) {
   await assertWorkspaceAdmin(sub, args.workspace);
-  await assertWithinLimit(sub, "invite"); // un grant peut provisionner + envoyer un email
+  await assertWithinLimit(sub, "invite"); // a grant may provision + send an email
   const w = await wsBySlug(args.workspace);
   const role = ROLES.includes(args.role ?? "") ? args.role! : "member";
   const account = await ensureAccount(args.email.trim(), {
@@ -91,7 +91,7 @@ export async function grantAccess(
   };
 }
 
-/** Retire un accès explicite. (La gouvernance reste à l'org-admin : pas de lockout possible.) */
+/** Removes an explicit access. (Governance stays with the org-admin: no lockout possible.) */
 export async function revokeGrant(sub: string, args: { workspace: string; userId: string }) {
   await assertWorkspaceAdmin(sub, args.workspace);
   const w = await wsBySlug(args.workspace);
@@ -101,11 +101,11 @@ export async function revokeGrant(sub: string, args: { workspace: string; userId
 }
 
 /**
- * Change le périmètre d'une KB. Passage à `private` : pose un grant curator au
- * caller (son rôle d'org ne donne plus la lecture — la gouvernance, elle, lui
- * reste par l'org). Passage à `org`/`public` : les grants restent (élévations
- * conservées). `public` = lecture mondiale (anonyme inclus) + galerie + recherche
- * publique ; l'org propriétaire garde son rôle (elle cure sa base publique).
+ * Changes a KB's scope. Switch to `private`: sets a curator grant for the caller
+ * (their org role no longer grants read — governance, however, stays with them via
+ * the org). Switch to `org`/`public`: the grants remain (elevations kept). `public` =
+ * worldwide read (anonymous included) + gallery + public search; the owning org keeps
+ * its role (it curates its public base).
  */
 export async function setVisibility(
   sub: string,

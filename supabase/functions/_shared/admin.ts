@@ -1,9 +1,9 @@
 /**
- * Administration des accès (UI admin) — gestion des membres d'une org.
- * Réservé aux admins de l'org ciblée. Miroir in-function du CLI `server/src/admin.ts`.
+ * Access administration (admin UI) — managing an org's members.
+ * Admins only, for the targeted org. In-function mirror of the CLI `server/src/admin.ts`.
  *
- * Résolution email↔sub via `auth.users` (même connexion DATABASE_URL que le CLI).
- * Création d'org / affectation de workspace restent au CLI (ops privilégiées, rares).
+ * email↔sub resolution via `auth.users` (same DATABASE_URL connection as the CLI).
+ * Org creation / workspace assignment stay in the CLI (privileged, rare ops).
  */
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db, orgs, memberships, workspaces, workspaceGrants } from "./db.ts";
@@ -22,7 +22,7 @@ async function emailsFor(subs: string[]): Promise<Map<string, { email: string; p
     sql`select id::text as id, email, (last_sign_in_at is not null) as signed
         from auth.users where id::text in (${list})`,
   );
-  // pending = compte provisionné (invitation) jamais connecté.
+  // pending = provisioned account (invitation) that has never signed in.
   return new Map([...rows].map((r) => [r.id, { email: r.email, pending: !r.signed }]));
 }
 
@@ -31,13 +31,13 @@ async function subForEmail(email: string): Promise<string> {
     sql`select id::text as id from auth.users where email = ${email} limit 1`,
   );
   const id = rows[0]?.id;
-  if (!id) throw new Error(`Aucun compte Supabase pour « ${email} » (l'utilisateur doit s'être connecté au moins une fois)`);
+  if (!id) throw new Error(`No Supabase account for "${email}" (the user must have signed in at least once)`);
   return id;
 }
 
 async function orgBySlug(slug: string) {
   const [o] = await db.select().from(orgs).where(eq(orgs.slug, slug)).limit(1);
-  if (!o) throw new Error(`org introuvable: ${slug}`);
+  if (!o) throw new Error(`org not found: ${slug}`);
   return o;
 }
 
@@ -48,16 +48,16 @@ async function roleOf(sub: string, orgId: string): Promise<string | null> {
 }
 
 async function assertOrgAdmin(sub: string, orgId: string): Promise<void> {
-  if ((await roleOf(sub, orgId)) !== "admin") throw new AccessError("réservé aux admins de l'org");
+  if ((await roleOf(sub, orgId)) !== "admin") throw new AccessError("org admins only");
 }
 
-/** Résolution email→sub pour les autres services (grants). */
+/** email→sub resolution for the other services (grants). */
 export const emailsForSubs = emailsFor;
 
 /**
- * Org perso du user (« Alexis's Workspace », issue #60) — auto-provisionnée au
- * premier accès topologique, idempotente (`mem_orgs.personal_for` unique).
- * Tout compte (guest compris) peut donc créer ses KB chez lui.
+ * User's personal org ("Alexis's Workspace", issue #60) — auto-provisioned on
+ * first topological access, idempotent (`mem_orgs.personal_for` unique).
+ * Any account (guests included) can therefore create their own KBs there.
  */
 export async function ensurePersonalOrg(sub: string): Promise<void> {
   const [existing] = await db.select({ id: orgs.id }).from(orgs)
@@ -70,20 +70,20 @@ export async function ensurePersonalOrg(sub: string): Promise<void> {
   if (taken.has(slug)) { let n = 2; while (taken.has(`${slug}-${n}`)) n++; slug = `${slug}-${n}`; }
   try {
     const [o] = await db.insert(orgs)
-      .values({ slug, name: `Perso (${local})`, personalFor: sub }).returning();
+      .values({ slug, name: `Personal (${local})`, personalFor: sub }).returning();
     await db.insert(memberships).values({ orgId: o.id, userId: sub, role: "admin" })
       .onConflictDoNothing();
   } catch {
-    // course perdue sur unique(personal_for) : l'autre requête a créé l'org — rien à faire.
+    // race lost on unique(personal_for): the other request created the org — nothing to do.
   }
 }
 
 /**
- * Onboarding : garantit org perso ET ≥ 1 KB accessible. Un compte loggé ne doit
- * JAMAIS rester sans base (sinon cul-de-sac à l'accueil). Si aucune KB ne lui est
- * accessible (ni `org`/`public` d'une de ses orgs, ni grantée), crée une KB privée
- * par défaut dans son org perso (+ grant curator : `private` ⇒ le rôle d'org NE
- * donne PAS la lecture du contenu, cf. effectiveRole). Idempotent ; anonyme = no-op.
+ * Onboarding: guarantees a personal org AND ≥ 1 accessible KB. A signed-in account
+ * must NEVER be left without a KB (otherwise a dead end on the home screen). If no KB
+ * is accessible to them (neither `org`/`public` of one of their orgs, nor granted), creates
+ * a default private KB in their personal org (+ curator grant: `private` ⇒ the org role does
+ * NOT grant read access to the content, see effectiveRole). Idempotent; anonymous = no-op.
  */
 export async function ensureDefaultWorkspace(sub: string): Promise<void> {
   if (!sub) return;
@@ -91,7 +91,7 @@ export async function ensureDefaultWorkspace(sub: string): Promise<void> {
   if ((await accessibleWorkspaceIds(sub)).length) return;
   const [perso] = await db.select({ id: orgs.id }).from(orgs)
     .where(eq(orgs.personalFor, sub)).limit(1);
-  if (!perso) return; // ensurePersonalOrg vient de l'assurer — défensif.
+  if (!perso) return; // ensurePersonalOrg just ensured it — defensive.
   const emails = await emailsFor([sub]);
   const local = (emails.get(sub)?.email ?? "perso").split("@")[0];
   let slug = slugify(`${local}-base`);
@@ -99,22 +99,22 @@ export async function ensureDefaultWorkspace(sub: string): Promise<void> {
   if (taken.has(slug)) { let n = 2; while (taken.has(`${slug}-${n}`)) n++; slug = `${slug}-${n}`; }
   try {
     const [w] = await db.insert(workspaces)
-      .values({ slug, name: "Ma première base", summary: "", orgId: perso.id, visibility: "private" })
+      .values({ slug, name: "My first KB", summary: "", orgId: perso.id, visibility: "private" })
       .returning();
     await db.insert(workspaceGrants)
       .values({ workspaceId: w.id, userId: sub, role: "curator", createdBy: sub })
       .onConflictDoNothing();
   } catch {
-    // course perdue (deux requêtes simultanées) : l'autre a créé la KB — rien à faire.
+    // race lost (two simultaneous requests): the other one created the KB — nothing to do.
   }
 }
 
 /**
- * Orgs dont le caller est membre, avec membres (email + rôle) et workspaces
- * VISIBLES par lui : KB `org`, privées qui lui sont grantées, et — s'il est
- * org-admin — l'EXISTENCE des privées de son org (gouvernance : il peut les
- * partager/archiver, pas en lire le contenu sans grant).
- * Provisionne l'org perso au passage (point d'entrée topologique de l'UI).
+ * Orgs the caller is a member of, with members (email + role) and workspaces
+ * VISIBLE to them: `org` KBs, private ones granted to them, and — if they are
+ * org-admin — the EXISTENCE of their org's private KBs (governance: they can
+ * share/archive them, not read their content without a grant).
+ * Provisions the personal org along the way (topological entry point of the UI).
  */
 export async function listMyOrgs(sub: string) {
   await ensureDefaultWorkspace(sub);
@@ -165,19 +165,19 @@ export async function listMyOrgs(sub: string) {
 function gotrueEnv() {
   const url = Deno.env.get("SUPABASE_URL");
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!url || !key) throw new Error("invitation indisponible (service_role absent)");
-  // L'invité atterrit sur l'APP (me.mento.cc), pas sur le sous-domaine MCP.
+  if (!url || !key) throw new Error("invitation unavailable (service_role missing)");
+  // The invitee lands on the APP (me.mento.cc), not on the MCP subdomain.
   const appUrl = Deno.env.get("MEMENTO_APP_URL");
-  if (!appUrl) throw new Error("MEMENTO_APP_URL absent (redirection invitation)");
+  if (!appUrl) throw new Error("MEMENTO_APP_URL missing (invitation redirect)");
   const redirectTo = `${appUrl}/callback`;
   const headers = { "content-type": "application/json", apikey: key, Authorization: `Bearer ${key}` };
   return { url, headers, redirectTo };
 }
 
 /**
- * Provisionne le compte (si besoin) ET renvoie le lien d'action GoTrue SANS envoyer
- * d'email — Memento envoie lui-même via Resend (cf. deliverInvite). Pour un compte
- * déjà existant, `type=magiclink` ; sinon `invite`.
+ * Provisions the account (if needed) AND returns the GoTrue action link WITHOUT sending
+ * an email — Memento sends it itself via Resend (see deliverInvite). For an already
+ * existing account, `type=magiclink`; otherwise `invite`.
  */
 async function generateInviteLink(email: string, existing = false): Promise<{ sub: string; link: string }> {
   const { url, headers, redirectTo } = gotrueEnv();
@@ -187,16 +187,16 @@ async function generateInviteLink(email: string, existing = false): Promise<{ su
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    console.error("[invite] GoTrue generate_link échec:", res.status, data);
-    throw new Error("génération du lien échouée");
+    console.error("[invite] GoTrue generate_link failure:", res.status, data);
+    throw new Error("link generation failed");
   }
   const link = data.action_link ?? data.properties?.action_link;
   const sub = data.user?.id ?? data.id;
-  if (!link || !sub) throw new Error("réponse generate_link inattendue");
+  if (!link || !sub) throw new Error("unexpected generate_link response");
   return { sub, link };
 }
 
-/** Métadonnées d'invitation pour enrichir l'email (org/KB ciblée, rôle, invitant). */
+/** Invitation metadata to enrich the email (targeted org/KB, role, inviter). */
 export interface InviteMeta {
   scope: "org" | "workspace";
   targetName: string;
@@ -205,9 +205,9 @@ export interface InviteMeta {
 }
 
 /**
- * Envoie l'email d'invitation via Resend pour un lien d'action déjà généré. Si le
- * provider n'est pas configuré ou échoue, retombe sur le lien à transmettre à la
- * main (l'admin le copie depuis l'UI) — pas de perte de fonctionnalité.
+ * Sends the invitation email via Resend for an already generated action link. If the
+ * provider is not configured or fails, falls back to the link to be passed along by
+ * hand (the admin copies it from the UI) — no loss of functionality.
  */
 async function deliverInvite(
   email: string,
@@ -235,9 +235,9 @@ async function deliverInvite(
 }
 
 /**
- * Invite un membre. Compte existant → ajout/màj du rôle (pas d'email). Nouveau compte →
- * provisionné + email d'invitation envoyé par Memento via Resend ; si le provider est
- * absent ou échoue, repli sur un lien à transmettre à la main. Admin de l'org requis.
+ * Invites a member. Existing account → role added/updated (no email). New account →
+ * provisioned + invitation email sent by Memento via Resend; if the provider is
+ * missing or fails, falls back to a link to be passed along by hand. Org admin required.
  */
 export async function inviteMember(sub: string, args: { orgSlug: string; email: string; role: string }) {
   const org = await orgBySlug(args.orgSlug);
@@ -257,10 +257,10 @@ export async function inviteMember(sub: string, args: { orgSlug: string; email: 
 }
 
 /**
- * Compte pour cet email — existant tel quel, sinon provisionné (GoTrue, sans email)
- * + email d'invitation envoyé par Memento via Resend (repli : lien à transmettre).
- * Brique partagée orgs / grants : UN flux d'invitation, deux atterrissages
- * (membership ou grant). `meta` enrichit l'email (org/KB, rôle, invitant).
+ * Account for this email — existing as-is, otherwise provisioned (GoTrue, no email)
+ * + invitation email sent by Memento via Resend (fallback: link to pass along).
+ * Shared building block for orgs / grants: ONE invitation flow, two landings
+ * (membership or grant). `meta` enriches the email (org/KB, role, inviter).
  */
 export async function ensureAccount(
   email: string,
@@ -275,24 +275,24 @@ export async function ensureAccount(
 }
 
 /**
- * Renvoie une invitation à un membre encore jamais connecté (pending) : magic link
- * généré par GoTrue (sans email) puis envoyé par Memento via Resend. Repli sur lien
- * à transmettre si le provider est absent/échoue. Admin de l'org requis.
+ * Resends an invitation to a member who has never signed in (pending): magic link
+ * generated by GoTrue (no email) then sent by Memento via Resend. Falls back to a link
+ * to pass along if the provider is missing/fails. Org admin required.
  */
 export async function resendInvite(sub: string, args: { orgSlug: string; email: string }) {
   const org = await orgBySlug(args.orgSlug);
   await assertOrgAdmin(sub, org.id);
   await assertWithinLimit(sub, "invite");
   const email = args.email.trim();
-  await subForEmail(email); // doit exister (provisionné)
-  const { link } = await generateInviteLink(email, true); // magic link (compte existant)
+  await subForEmail(email); // must exist (provisioned)
+  const { link } = await generateInviteLink(email, true); // magic link (existing account)
   const { emailSent, inviteLink } = await deliverInvite(email, link, {
     scope: "org", targetName: org.name, inviterSub: sub,
   });
   return { orgSlug: org.slug, email, emailSent, inviteLink };
 }
 
-/** Lien de connexion à transmettre à la main (repli messagerie) pour un compte existant. */
+/** Sign-in link to pass along by hand (messaging fallback) for an existing account. */
 export async function inviteLinkFor(sub: string, args: { orgSlug: string; email: string }) {
   const org = await orgBySlug(args.orgSlug);
   await assertOrgAdmin(sub, org.id);
@@ -304,13 +304,13 @@ export async function inviteLinkFor(sub: string, args: { orgSlug: string; email:
 }
 
 /**
- * Crée une org (périmètre de partage : mission/client, perso) — le créateur en
- * devient admin. Pas de gating au-delà de l'authentification : un périmètre vide
- * n'expose rien. Slug dédupliqué globalement.
+ * Creates an org (sharing scope: mission/client, personal) — the creator
+ * becomes its admin. No gating beyond authentication: an empty scope
+ * exposes nothing. Slug deduplicated globally.
  */
 export async function createOrg(sub: string, args: { name: string; slug?: string }) {
-  if (!args.name?.trim()) throw new Error("nom de l'organisation requis");
-  await assertWithinLimit(sub, "create_org"); // pas de gating org-admin ici → borne le débit
+  if (!args.name?.trim()) throw new Error("organization name required");
+  await assertWithinLimit(sub, "create_org"); // no org-admin gating here → bounds the throughput
 
   let slug = slugify(args.slug?.trim() || args.name);
   const taken = new Set((await db.select({ slug: orgs.slug }).from(orgs)).map((o) => o.slug));
@@ -321,7 +321,7 @@ export async function createOrg(sub: string, args: { name: string; slug?: string
   return { slug: o.slug, name: o.name, myRole: "admin" };
 }
 
-/** Supprime une org VIDE (aucune KB, aucun membre autre que le caller) — corrige une fausse manip. */
+/** Deletes an EMPTY org (no KB, no member other than the caller) — fixes a mistake. */
 export async function deleteOrg(sub: string, args: { orgSlug: string }) {
   const org = await orgBySlug(args.orgSlug);
   await assertOrgAdmin(sub, org.id);
@@ -329,24 +329,24 @@ export async function deleteOrg(sub: string, args: { orgSlug: string }) {
     db.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.orgId, org.id)).limit(1),
     db.select({ u: memberships.userId }).from(memberships).where(eq(memberships.orgId, org.id)),
   ]);
-  if (ws.length) throw new Error("l'org possède des KB — réassigner ou archiver d'abord");
-  if (members.some((m) => m.u !== sub)) throw new Error("l'org a d'autres membres — les retirer d'abord");
-  await db.delete(orgs).where(eq(orgs.id, org.id)); // memberships en cascade
+  if (ws.length) throw new Error("the org owns KBs — reassign or archive them first");
+  if (members.some((m) => m.u !== sub)) throw new Error("the org has other members — remove them first");
+  await db.delete(orgs).where(eq(orgs.id, org.id)); // memberships cascade
   return { deleted: org.slug };
 }
 
 /**
- * Transfère une KB vers une autre org = changement de TENANT (ex. promouvoir une
- * KB de l'org perso vers l'org d'équipe). Le périmètre (visibility/grants) suit
- * la KB. Gating : admin des DEUX orgs — un grant par base ne délègue JAMAIS la
- * tenancy (sinon un guest grant-admin pourrait exfiltrer la base vers son org).
+ * Transfers a KB to another org = change of TENANT (e.g. promoting a KB from the
+ * personal org to the team org). The scope (visibility/grants) follows the KB.
+ * Gating: admin of BOTH orgs — a per-KB grant NEVER delegates the tenancy
+ * (otherwise a guest grant-admin could exfiltrate the KB to their own org).
  */
 export async function transferWorkspace(sub: string, args: { workspace: string; toOrg: string }) {
   const [w] = await db.select().from(workspaces).where(eq(workspaces.slug, args.workspace)).limit(1);
-  if (!w) throw new Error(`KB introuvable: ${args.workspace}`);
-  if (!w.orgId) throw new Error("KB sans org propriétaire — réassigner via l'outillage");
+  if (!w) throw new Error(`KB not found: ${args.workspace}`);
+  if (!w.orgId) throw new Error("KB without an owning org — reassign via the tooling");
   const dest = await orgBySlug(args.toOrg);
-  if (dest.id === w.orgId) throw new Error("la KB est déjà dans cette org");
+  if (dest.id === w.orgId) throw new Error("the KB is already in this org");
   await assertOrgAdmin(sub, w.orgId);
   await assertOrgAdmin(sub, dest.id);
   await db.update(workspaces).set({ orgId: dest.id }).where(eq(workspaces.id, w.id));
@@ -354,9 +354,9 @@ export async function transferWorkspace(sub: string, args: { workspace: string; 
 }
 
 /**
- * Crée une KB vide dans une org dont le caller est admin. `visibility` défaut
- * `org` ; `private` → grant curator posé au créateur (lecture/écriture — la
- * gouvernance lui reste de toute façon par l'org).
+ * Creates an empty KB in an org the caller is admin of. `visibility` defaults to
+ * `org`; `private` → curator grant placed on the creator (read/write — governance
+ * stays with them anyway through the org).
  */
 export async function createWorkspace(
   sub: string,
@@ -364,10 +364,10 @@ export async function createWorkspace(
 ) {
   const org = await orgBySlug(args.orgSlug);
   await assertOrgAdmin(sub, org.id);
-  if (!args.name?.trim()) throw new Error("nom de la base requis");
+  if (!args.name?.trim()) throw new Error("KB name required");
   const visibility = args.visibility === "private" || args.visibility === "public" ? args.visibility : "org";
 
-  // slug global unique (mem_workspaces.slug est unique tous orgs confondus).
+  // globally unique slug (mem_workspaces.slug is unique across all orgs).
   let slug = slugify(args.slug?.trim() || args.name);
   const taken = new Set((await db.select({ slug: workspaces.slug }).from(workspaces)).map((w) => w.slug));
   if (taken.has(slug)) { let n = 2; while (taken.has(`${slug}-${n}`)) n++; slug = `${slug}-${n}`; }
@@ -383,14 +383,14 @@ export async function createWorkspace(
   return { slug: w.slug, name: w.name, summary: w.summary, orgSlug: org.slug, visibility };
 }
 
-/** Retire un membre. Admin requis. Refuse de retirer le dernier admin (anti-lockout). */
+/** Removes a member. Admin required. Refuses to remove the last admin (anti-lockout). */
 export async function removeMember(sub: string, args: { orgSlug: string; userId: string }) {
   const org = await orgBySlug(args.orgSlug);
   await assertOrgAdmin(sub, org.id);
   const admins = await db.select({ u: memberships.userId }).from(memberships)
     .where(and(eq(memberships.orgId, org.id), eq(memberships.role, "admin")));
   if (admins.length === 1 && admins[0].u === args.userId) {
-    throw new Error("impossible de retirer le dernier admin de l'org");
+    throw new Error("cannot remove the last admin of the org");
   }
   await db.delete(memberships).where(and(eq(memberships.orgId, org.id), eq(memberships.userId, args.userId)));
   return { removed: args.userId, orgSlug: org.slug };

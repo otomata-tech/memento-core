@@ -1,11 +1,11 @@
 /**
- * Sémantique par bloc (issue #10) : embedding calculé CÔTÉ SERVEUR à l'écriture
- * (« intelligence à l'écriture, lecture déterministe ») + kNN `mem_similar`.
+ * Per-block semantics (issue #10): embedding computed SERVER-SIDE on write
+ * ("intelligence on write, deterministic read") + kNN `mem_similar`.
  *
- * Un embedding est un encodage mécanique, pas un jugement — le principe « serveur
- * bête » interdit le jugement serveur, pas l'encodage. Si l'API d'embedding est
- * indisponible, le bloc s'écrit avec embedding NULL (pas de fallback caché) ; le
- * backfill (`npm run embed:backfill`) rattrape, et le kNN ignore les NULL.
+ * An embedding is a mechanical encoding, not a judgment — the "dumb server"
+ * principle forbids server-side judgment, not encoding. If the embedding API is
+ * unavailable, the block is written with a NULL embedding (no hidden fallback); the
+ * backfill (`npm run embed:backfill`) catches up, and the kNN ignores NULLs.
  */
 import { sql } from "drizzle-orm";
 import { db } from "./db.ts";
@@ -25,13 +25,13 @@ export async function embedTexts(texts: string[]): Promise<number[][] | null> {
     const data = await res.json();
     return data.data.map((d: { embedding: number[] }) => d.embedding);
   } catch {
-    return null; // best-effort : le backfill rattrapera
+    return null; // best-effort: the backfill will catch up
   }
 }
 
 const toVec = (e: number[]) => `[${e.join(",")}]`;
 
-/** Vectorise et stocke (best-effort) — appelé par write.ts après création/édition de contenu. */
+/** Vectorizes and stores (best-effort) — called by write.ts after content creation/edit. */
 export async function embedBlocks(rows: { id: string; content: string }[]): Promise<void> {
   const vecs = await embedTexts(rows.map((r) => r.content));
   if (!vecs) return;
@@ -43,10 +43,10 @@ export async function embedBlocks(rows: { id: string; content: string }[]): Prom
 }
 
 /**
- * Signal anti-doublon à l'écriture (#44) : les k blocs quasi identiques déjà
- * présents dans la KB. Le serveur fournit le signal, l'agent juge (CONFIRM
- * plutôt qu'ENRICH ?) — pur D1. Best-effort : jamais bloquant, [] si
- * l'embedding est indisponible ou le bloc non vectorisé.
+ * Anti-duplicate signal on write (#44): the k near-identical blocks already
+ * present in the KB. The server provides the signal, the agent judges (CONFIRM
+ * rather than ENRICH?) — pure D1. Best-effort: never blocking, [] if the
+ * embedding is unavailable or the block is not vectorized.
  */
 export const NEAR_DUP_THRESHOLD = 0.85;
 
@@ -67,35 +67,35 @@ export async function nearDuplicates(
         document: h.document,
       }));
   } catch {
-    return []; // signal, pas garantie — l'écriture n'échoue jamais à cause de lui
+    return []; // signal, not a guarantee — the write never fails because of it
   }
 }
 
 export type SimilarArgs = {
-  workspaceIds: string[]; // un seul = mono-KB ; plusieurs = recherche globale
+  workspaceIds: string[]; // one = single-KB; several = global search
   blockId?: string;
   text?: string;
   k?: number;
   blockType?: string;
   docKind?: string;
-  sectionIds?: string[] | null; // sous-arbre déjà résolu (resolveSectionIds) ; [] = aucun match
+  sectionIds?: string[] | null; // sub-tree already resolved (resolveSectionIds); [] = no match
 };
 
-/** k blocs les plus proches (cosine) dans le(s) workspace(s) donnés. Par bloc-ancre ou texte libre. */
+/** k nearest blocks (cosine) in the given workspace(s). By anchor block or free text. */
 export async function similarBlocks(args: SimilarArgs) {
   const k = Math.min(Math.max(args.k ?? 8, 1), 50);
 
-  let anchor: string; // littéral vector
+  let anchor: string; // vector literal
   if (args.blockId) {
     const rows = await db.execute<{ embedding: string | null; content: string }>(
       sql`select embedding::text as embedding, content from mem_blocks where id = ${args.blockId} limit 1`,
     );
     const row = rows[0];
-    if (!row) throw new Error(`Bloc introuvable: ${args.blockId}`);
+    if (!row) throw new Error(`Block not found: ${args.blockId}`);
     if (row.embedding) anchor = row.embedding;
     else {
       const vecs = await embedTexts([row.content]);
-      if (!vecs) throw new Error("bloc non vectorisé et API d'embedding indisponible — réessaie plus tard");
+      if (!vecs) throw new Error("block not vectorized and embedding API unavailable — try again later");
       anchor = toVec(vecs[0]);
       await db.execute(sql`
         update mem_blocks set embedding = ${anchor}::vector, embedding_model = ${EMBEDDING_MODEL}
@@ -103,10 +103,10 @@ export async function similarBlocks(args: SimilarArgs) {
     }
   } else if (args.text?.trim()) {
     const vecs = await embedTexts([args.text]);
-    if (!vecs) throw new Error("API d'embedding indisponible — réessaie plus tard");
+    if (!vecs) throw new Error("embedding API unavailable — try again later");
     anchor = toVec(vecs[0]);
   } else {
-    throw new Error("`blockId` ou `text` requis");
+    throw new Error("`blockId` or `text` required");
   }
 
   if (!args.workspaceIds.length || args.sectionIds?.length === 0) {

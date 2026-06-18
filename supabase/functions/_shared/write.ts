@@ -1,16 +1,16 @@
 /**
- * Écriture curée (Lot 2) — verbes mutants au grain du bloc/document. Toute mutation
- * exige un `reason` et journalise une `MemRevision` (avant/après). Cf. spec §5.2.
+ * Curated writes (Batch 2) — mutating verbs at the block/document granularity. Every
+ * mutation requires a `reason` and logs a `MemRevision` (before/after). Cf. spec §5.2.
  *
- * L'autorisation (membre admin/curator de l'org propriétaire) est vérifiée en amont
- * par les handlers via assertAccess(..., { write: true }).
+ * Authorization (admin/curator member of the owning org) is checked upstream by the
+ * handlers via assertAccess(..., { write: true }).
  */
 import { and, eq, sql } from "drizzle-orm";
 import { embedBlocks, nearDuplicates } from "./semantic.ts";
 import { db, documents, blocks, sections, revisions, sources, blockSources, links, comments } from "./db.ts";
 import { workspaceIdForTarget } from "./access.ts";
 
-/** Contexte d'écriture optionnel : relie la révision à une ingestion (Lot 5). */
+/** Optional write context: links the revision to an ingestion (Batch 5). */
 export type WriteCtx = { ingestionId?: string };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -21,7 +21,7 @@ export function slugify(input: string, max = 60): string {
   return s || "doc";
 }
 
-/** Découpe un markdown en blocs PROSE (paragraphes fusionnés, taille bornée). */
+/** Splits markdown into PROSE blocks (merged paragraphs, bounded size). */
 function splitMarkdown(text: string, maxChars = 1500, maxBlocks = 40): string[] {
   const paras = text.replace(/\r\n/g, "\n").split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
   const out: string[] = [];
@@ -45,7 +45,7 @@ async function nextPosition(table: "documents" | "blocks", parentCol: string, pa
 
 async function sectionWorkspace(sectionId: string): Promise<string> {
   const [s] = await db.select({ ws: sections.workspaceId }).from(sections).where(eq(sections.id, sectionId)).limit(1);
-  if (!s) throw new Error(`Section introuvable: ${sectionId}`);
+  if (!s) throw new Error(`Section not found: ${sectionId}`);
   return s.ws;
 }
 
@@ -60,7 +60,7 @@ export async function revise(
   });
 }
 
-// ── Verbes ──────────────────────────────────────────────────────────────────
+// ── Verbs ─────────────────────────────────────────────────────────────────────
 type BlockInput = { type: string; content: string };
 
 export async function addDocument(
@@ -70,7 +70,7 @@ export async function addDocument(
 ) {
   const wsId = await sectionWorkspace(args.sectionId);
 
-  // Idempotence (#44) : même clientKey sous la même section → no-op, renvoie l'existant.
+  // Idempotency (#44): same clientKey under the same section → no-op, returns the existing one.
   if (args.clientKey) {
     const [dup] = await db.select().from(documents)
       .where(and(eq(documents.sectionId, args.sectionId), eq(documents.clientKey, args.clientKey))).limit(1);
@@ -80,7 +80,7 @@ export async function addDocument(
     }
   }
 
-  // slug unique sous la section
+  // unique slug under the section
   let slug = slugify(args.title);
   const existing = await db.select({ slug: documents.slug }).from(documents).where(eq(documents.sectionId, args.sectionId));
   const taken = new Set(existing.map((d) => d.slug));
@@ -92,7 +92,7 @@ export async function addDocument(
     clientKey: args.clientKey ?? null,
     position: await nextPosition("documents", "section_id", args.sectionId),
   }).onConflictDoNothing({ target: [documents.sectionId, documents.clientKey] }).returning();
-  // Course perdue entre le check et l'insert : l'autre requête a gagné, renvoyer son résultat.
+  // Race lost between the check and the insert: the other request won, return its result.
   if (!doc) return addDocument(args, actor, ctx);
 
   const toInsert: { documentId: string; type: any; content: string; position: number }[] = [];
@@ -102,9 +102,9 @@ export async function addDocument(
     args.blocks.forEach((b, i) => toInsert.push({ documentId: doc.id, type: b.type as any, content: b.content, position: i }));
   }
   const blockRows = toInsert.length ? await db.insert(blocks).values(toInsert).returning() : [];
-  await embedBlocks(blockRows.map((b) => ({ id: b.id, content: b.content }))); // best-effort (NULL si API down)
+  await embedBlocks(blockRows.map((b) => ({ id: b.id, content: b.content }))); // best-effort (NULL if API down)
 
-  await revise(wsId, "document", doc.id, "create", args.reason ?? `ajout document « ${args.title} »`, actor, null, { title: args.title, slug, blocks: blockRows.length }, ctx?.ingestionId);
+  await revise(wsId, "document", doc.id, "create", args.reason ?? `add document "${args.title}"`, actor, null, { title: args.title, slug, blocks: blockRows.length }, ctx?.ingestionId);
   return { document: doc, blocks: blockRows };
 }
 
@@ -114,9 +114,9 @@ export async function addBlock(
   ctx?: WriteCtx,
 ) {
   const wsId = await workspaceIdForTarget("document", args.documentId);
-  if (!wsId) throw new Error(`Document introuvable: ${args.documentId}`);
+  if (!wsId) throw new Error(`Document not found: ${args.documentId}`);
 
-  // Idempotence (#44) : même clientKey dans le même document → no-op, renvoie l'existant.
+  // Idempotency (#44): same clientKey in the same document → no-op, returns the existing one.
   if (args.clientKey) {
     const [dup] = await db.select().from(blocks)
       .where(and(eq(blocks.documentId, args.documentId), eq(blocks.clientKey, args.clientKey))).limit(1);
@@ -128,10 +128,10 @@ export async function addBlock(
     clientKey: args.clientKey ?? null,
     position: args.position ?? await nextPosition("blocks", "document_id", args.documentId),
   }).onConflictDoNothing({ target: [blocks.documentId, blocks.clientKey] }).returning();
-  if (!b) return addBlock(args, actor, ctx); // course perdue check/insert → relit l'existant
+  if (!b) return addBlock(args, actor, ctx); // race lost check/insert → re-reads the existing one
   await embedBlocks([{ id: b.id, content: b.content }]); // best-effort
-  await revise(wsId, "block", b.id, "create", args.reason ?? "ajout bloc", actor, null, { type: b.type, content: b.content }, ctx?.ingestionId);
-  // Signal anti-doublon (#44) : blocs quasi identiques déjà en base — l'agent juge.
+  await revise(wsId, "block", b.id, "create", args.reason ?? "add block", actor, null, { type: b.type, content: b.content }, ctx?.ingestionId);
+  // Anti-duplicate signal (#44): near-identical blocks already in the database — the agent judges.
   const similar = await nearDuplicates(wsId, { blockId: b.id });
   return similar.length ? { ...b, similarExisting: similar } : b;
 }
@@ -142,7 +142,7 @@ export async function updateBlock(
   ctx?: WriteCtx,
 ) {
   const wsId = await workspaceIdForTarget("block", args.id);
-  if (!wsId) throw new Error(`Bloc introuvable: ${args.id}`);
+  if (!wsId) throw new Error(`Block not found: ${args.id}`);
   const [before] = await db.select().from(blocks).where(eq(blocks.id, args.id)).limit(1);
   const patch: Record<string, unknown> = {};
   if (args.content !== undefined) patch.content = args.content;
@@ -155,7 +155,7 @@ export async function updateBlock(
 
 export async function setBlockType(args: { id: string; type: string; reason: string }, actor: string, ctx?: WriteCtx) {
   const wsId = await workspaceIdForTarget("block", args.id);
-  if (!wsId) throw new Error(`Bloc introuvable: ${args.id}`);
+  if (!wsId) throw new Error(`Block not found: ${args.id}`);
   const [before] = await db.select().from(blocks).where(eq(blocks.id, args.id)).limit(1);
   const [after] = await db.update(blocks).set({ type: args.type as any }).where(eq(blocks.id, args.id)).returning();
   await revise(wsId, "block", args.id, "set_type", args.reason, actor, before, after, ctx?.ingestionId);
@@ -164,7 +164,7 @@ export async function setBlockType(args: { id: string; type: string; reason: str
 
 export async function deleteBlock(args: { id: string; reason: string }, actor: string, ctx?: WriteCtx) {
   const wsId = await workspaceIdForTarget("block", args.id);
-  if (!wsId) throw new Error(`Bloc introuvable: ${args.id}`);
+  if (!wsId) throw new Error(`Block not found: ${args.id}`);
   const [before] = await db.select().from(blocks).where(eq(blocks.id, args.id)).limit(1);
   await db.delete(blocks).where(eq(blocks.id, args.id));
   await revise(wsId, "block", args.id, "delete", args.reason, actor, before, null, ctx?.ingestionId);
@@ -173,9 +173,9 @@ export async function deleteBlock(args: { id: string; reason: string }, actor: s
 
 // ── Sources ───────────────────────────────────────────────────────────────────
 /**
- * Attache une source à un bloc. Soit on réutilise une source existante (`sourceId`),
- * soit on en crée une à la volée (`kind` + `title` requis). Une source est autonome
- * et réutilisable : pas de scope workspace (le lien bloc↔source l'est).
+ * Attaches a source to a block. Either reuse an existing source (`sourceId`), or
+ * create one on the fly (`kind` + `title` required). A source is standalone and
+ * reusable: no workspace scope (the block↔source link is).
  */
 export async function attachSource(
   args: {
@@ -187,11 +187,11 @@ export async function attachSource(
   ctx?: WriteCtx,
 ) {
   const wsId = await workspaceIdForTarget("block", args.blockId);
-  if (!wsId) throw new Error(`Bloc introuvable: ${args.blockId}`);
+  if (!wsId) throw new Error(`Block not found: ${args.blockId}`);
   let sourceId = args.sourceId;
   let created: typeof sources.$inferSelect | null = null;
   if (!sourceId) {
-    if (!args.kind || !args.title) throw new Error("`sourceId`, ou (`kind` + `title`) requis");
+    if (!args.kind || !args.title) throw new Error("`sourceId`, or (`kind` + `title`) required");
     [created] = await db.insert(sources).values({
       kind: args.kind as any, title: args.title,
       ref: args.ref ?? null, citation: args.citation ?? null,
@@ -201,24 +201,24 @@ export async function attachSource(
   await db.insert(blockSources)
     .values({ blockId: args.blockId, sourceId, locator: args.locator ?? null })
     .onConflictDoNothing();
-  await revise(wsId, "block", args.blockId, "attach_source", args.reason ?? "ajout source", actor, null, { sourceId, locator: args.locator ?? null }, ctx?.ingestionId);
+  await revise(wsId, "block", args.blockId, "attach_source", args.reason ?? "add source", actor, null, { sourceId, locator: args.locator ?? null }, ctx?.ingestionId);
   return { blockId: args.blockId, sourceId, source: created };
 }
 
 export async function detachSource(args: { blockId: string; sourceId: string; reason?: string }, actor: string, ctx?: WriteCtx) {
   const wsId = await workspaceIdForTarget("block", args.blockId);
-  if (!wsId) throw new Error(`Bloc introuvable: ${args.blockId}`);
+  if (!wsId) throw new Error(`Block not found: ${args.blockId}`);
   await db.delete(blockSources)
     .where(and(eq(blockSources.blockId, args.blockId), eq(blockSources.sourceId, args.sourceId)));
-  await revise(wsId, "block", args.blockId, "detach_source", args.reason ?? "retrait source", actor, { sourceId: args.sourceId }, null, ctx?.ingestionId);
+  await revise(wsId, "block", args.blockId, "detach_source", args.reason ?? "remove source", actor, { sourceId: args.sourceId }, null, ctx?.ingestionId);
   return { blockId: args.blockId, sourceId: args.sourceId, detached: true };
 }
 
-// ── Vérification ───────────────────────────────────────────────────────────────
-/** Marque un bloc comme vérifié (horodatage + acteur), ou retire la vérif (`verified:false`). */
+// ── Verification ───────────────────────────────────────────────────────────────
+/** Marks a block as verified (timestamp + actor), or removes the verification (`verified:false`). */
 export async function verifyBlock(args: { id: string; verified?: boolean; reason?: string }, actor: string, ctx?: WriteCtx) {
   const wsId = await workspaceIdForTarget("block", args.id);
-  if (!wsId) throw new Error(`Bloc introuvable: ${args.id}`);
+  if (!wsId) throw new Error(`Block not found: ${args.id}`);
   const [before] = await db.select().from(blocks).where(eq(blocks.id, args.id)).limit(1);
   const verified = args.verified !== false;
   const [after] = await db.update(blocks)
@@ -226,17 +226,17 @@ export async function verifyBlock(args: { id: string; verified?: boolean; reason
     .where(eq(blocks.id, args.id)).returning();
   await revise(
     wsId, "block", args.id, verified ? "verify" : "unverify",
-    args.reason ?? (verified ? "vérifié" : "vérification retirée"),
+    args.reason ?? (verified ? "verified" : "verification removed"),
     actor, { verifiedAt: before.verifiedAt }, { verifiedAt: after.verifiedAt }, ctx?.ingestionId,
   );
   return { id: args.id, verifiedAt: after.verifiedAt, verifiedBy: after.verifiedBy };
 }
 
-// ── Déplacement ────────────────────────────────────────────────────────────────
+// ── Move ───────────────────────────────────────────────────────────────────────
 /**
- * Déplace un bloc : réordonne dans son document, ou le rattache à un autre document
- * du même workspace (`toDocumentId`). Renumérote les positions à plat (0..n-1) dans
- * le(s) document(s) touché(s) — serveur bête, positions toujours denses.
+ * Moves a block: reorders it within its document, or reattaches it to another document
+ * in the same workspace (`toDocumentId`). Renumbers positions flat (0..n-1) in the
+ * affected document(s) — dumb server, always dense positions.
  */
 export async function moveBlock(
   args: { id: string; toDocumentId?: string; position?: number; reason: string },
@@ -244,18 +244,18 @@ export async function moveBlock(
   ctx?: WriteCtx,
 ) {
   const wsId = await workspaceIdForTarget("block", args.id);
-  if (!wsId) throw new Error(`Bloc introuvable: ${args.id}`);
+  if (!wsId) throw new Error(`Block not found: ${args.id}`);
   const [block] = await db.select().from(blocks).where(eq(blocks.id, args.id)).limit(1);
   const before = { documentId: block.documentId, position: block.position };
 
   const targetDoc = args.toDocumentId ?? block.documentId;
   if (targetDoc !== block.documentId) {
     const destWs = await workspaceIdForTarget("document", targetDoc);
-    if (!destWs) throw new Error(`Document cible introuvable: ${targetDoc}`);
-    if (destWs !== wsId) throw new Error("déplacement cross-workspace interdit");
+    if (!destWs) throw new Error(`Target document not found: ${targetDoc}`);
+    if (destWs !== wsId) throw new Error("cross-workspace move forbidden");
   }
 
-  // Document de destination : frères ordonnés, hors le bloc déplacé, puis insertion.
+  // Destination document: ordered siblings, excluding the moved block, then insertion.
   const dest = (await db.select({ id: blocks.id }).from(blocks)
     .where(eq(blocks.documentId, targetDoc)).orderBy(blocks.position))
     .filter((b) => b.id !== args.id)
@@ -267,7 +267,7 @@ export async function moveBlock(
       .set(dest[i] === args.id ? { position: i, documentId: targetDoc } : { position: i })
       .where(eq(blocks.id, dest[i]));
   }
-  // Document source (si différent) : retasser les positions restantes.
+  // Source document (if different): repack the remaining positions.
   if (targetDoc !== block.documentId) {
     const src = (await db.select({ id: blocks.id }).from(blocks)
       .where(eq(blocks.documentId, block.documentId)).orderBy(blocks.position)).map((b) => b.id);
@@ -281,54 +281,54 @@ export async function moveBlock(
   return { id: args.id, ...after };
 }
 
-// ── Liens & obsolescence (briques de la boucle d'ingestion — classes CONTRADICT/OBSOLETE) ──
-/** Crée un lien typé entre deux blocs du même workspace. */
+// ── Links & obsolescence (building blocks of the ingestion loop — CONTRADICT/OBSOLETE classes) ──
+/** Creates a typed link between two blocks of the same workspace. */
 export async function linkBlocks(
   args: { fromId: string; toId: string; relation: string; note?: string; reason?: string },
   actor: string,
   ctx?: WriteCtx,
 ) {
   const wsId = await workspaceIdForTarget("block", args.fromId);
-  if (!wsId) throw new Error(`Bloc introuvable: ${args.fromId}`);
+  if (!wsId) throw new Error(`Block not found: ${args.fromId}`);
   const toWs = await workspaceIdForTarget("block", args.toId);
-  if (!toWs) throw new Error(`Bloc introuvable: ${args.toId}`);
-  if (toWs !== wsId) throw new Error("lien cross-workspace interdit");
+  if (!toWs) throw new Error(`Block not found: ${args.toId}`);
+  if (toWs !== wsId) throw new Error("cross-workspace link forbidden");
   const [l] = await db.insert(links).values({
     fromBlockId: args.fromId, toBlockId: args.toId, relation: args.relation as any,
     note: args.note ?? null, createdBy: actor,
   }).onConflictDoNothing().returning();
-  await revise(wsId, "link", l?.id ?? null, "link", args.reason ?? `lien ${args.relation}`, actor, null, { fromId: args.fromId, toId: args.toId, relation: args.relation }, ctx?.ingestionId);
-  return l ?? { fromBlockId: args.fromId, toBlockId: args.toId, relation: args.relation, note: "déjà existant" };
+  await revise(wsId, "link", l?.id ?? null, "link", args.reason ?? `link ${args.relation}`, actor, null, { fromId: args.fromId, toId: args.toId, relation: args.relation }, ctx?.ingestionId);
+  return l ?? { fromBlockId: args.fromId, toBlockId: args.toId, relation: args.relation, note: "already exists" };
 }
 
-/** Passe un document en DEPRECATED (obsolescence). `supersededBy` est tracé en révision. */
+/** Moves a document to DEPRECATED (obsolescence). `supersededBy` is traced in the revision. */
 export async function deprecateDocument(
   args: { id: string; supersededBy?: string; reason: string },
   actor: string,
   ctx?: WriteCtx,
 ) {
   const wsId = await workspaceIdForTarget("document", args.id);
-  if (!wsId) throw new Error(`Document introuvable: ${args.id}`);
+  if (!wsId) throw new Error(`Document not found: ${args.id}`);
   const [before] = await db.select().from(documents).where(eq(documents.id, args.id)).limit(1);
   const [after] = await db.update(documents).set({ status: "DEPRECATED" }).where(eq(documents.id, args.id)).returning();
   await revise(wsId, "document", args.id, "deprecate", args.reason, actor, { status: before.status }, { status: "DEPRECATED", supersededBy: args.supersededBy ?? null }, ctx?.ingestionId);
   return { id: args.id, status: after.status, supersededBy: args.supersededBy ?? null };
 }
 
-/** Supprime un lien typé entre deux blocs. */
+/** Deletes a typed link between two blocks. */
 export async function unlinkBlocks(args: { linkId: string; reason?: string }, actor: string, ctx?: WriteCtx) {
   const [link] = await db.select().from(links).where(eq(links.id, args.linkId)).limit(1);
-  if (!link) throw new Error(`Lien introuvable: ${args.linkId}`);
+  if (!link) throw new Error(`Link not found: ${args.linkId}`);
   const wsId = await workspaceIdForTarget("block", link.fromBlockId);
-  if (!wsId) throw new Error(`Bloc source introuvable: ${link.fromBlockId}`);
+  if (!wsId) throw new Error(`Source block not found: ${link.fromBlockId}`);
   await db.delete(links).where(eq(links.id, args.linkId));
-  await revise(wsId, "link", args.linkId, "unlink", args.reason ?? "retrait lien", actor,
+  await revise(wsId, "link", args.linkId, "unlink", args.reason ?? "remove link", actor,
     { fromId: link.fromBlockId, toId: link.toBlockId, relation: link.relation }, null, ctx?.ingestionId);
   return { deleted: args.linkId };
 }
 
-// ── Commentaires (annotations, cible polymorphe) ───────────────────────────────
-/** Annote un bloc/document/section. Les commentaires sont leur propre trace (author + date). */
+// ── Comments (annotations, polymorphic target) ─────────────────────────────────
+/** Annotates a block/document/section. Comments are their own trace (author + date). */
 export async function addComment(
   args: { targetType: string; targetId: string; body: string; authorKind?: string },
   actor: string,
@@ -340,9 +340,9 @@ export async function addComment(
   return c;
 }
 
-/** Marque un commentaire comme résolu (horodatage). */
+/** Marks a comment as resolved (timestamp). */
 export async function resolveComment(args: { id: string }) {
   const [c] = await db.update(comments).set({ resolvedAt: new Date() }).where(eq(comments.id, args.id)).returning();
-  if (!c) throw new Error(`Commentaire introuvable: ${args.id}`);
+  if (!c) throw new Error(`Comment not found: ${args.id}`);
   return { id: c.id, resolvedAt: c.resolvedAt };
 }

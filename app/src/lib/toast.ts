@@ -1,4 +1,4 @@
-// Toasts de feedback — store réactif minimal, rendu par Toaster.vue (monté dans App.vue).
+// Feedback toasts — minimal reactive store, rendered by Toaster.vue (mounted in App.vue).
 import { reactive } from "vue";
 
 export type ToastKind = "ok" | "err" | "info";

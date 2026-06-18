@@ -1,26 +1,26 @@
 /**
- * Lecture-avant-écriture (issue : faire vivre le graphe via des agents context-riches).
+ * Read-before-write (issue: keep the graph alive via context-rich agents).
  *
- * Principe : un agent ne devrait pas écrire dans une KB de taille raisonnable sans
- * l'avoir d'abord chargée en entier — ça lui évite les doublons, lui fait placer le
- * bloc au bon endroit, et lui donne tous les blockId pour relier (graphe).
+ * Principle: an agent should not write into a reasonably-sized KB without having
+ * first loaded it in full — this avoids duplicates, makes it place the block in the
+ * right spot, and gives it all the blockIds to link (graph).
  *
- * Le serveur ne peut pas prouver qu'un agent a « lu » : il prouve qu'il a APPELÉ
- * `mem_load` (seul émetteur du jeton) pour la VERSION courante de la KB. Le jeton est
- * sans état — HMAC(secret, "<wsId>|<version>") — donc pas de table : il respecte le
- * « serveur sans état ». Au write, on recalcule le HMAC pour la version actuelle :
- * absent → l'agent n'a pas chargé ; périmé → la KB a changé depuis, il doit recharger.
+ * The server cannot prove that an agent "read": it proves that it CALLED `mem_load`
+ * (the sole token issuer) for the current VERSION of the KB. The token is stateless —
+ * HMAC(secret, "<wsId>|<version>") — so no table: it honors the "stateless server".
+ * On write, the HMAC is recomputed for the current version: absent → the agent didn't
+ * load; stale → the KB has changed since, it must reload.
  *
- * Mode WARN (défaut) : l'écriture passe quand même, mais on annote la réponse et on
- * journalise le miss (mesure de conformité avant de basculer en blocage dur).
+ * WARN mode (default): the write passes anyway, but we annotate the response and log
+ * the miss (compliance measurement before switching to hard blocking).
  */
 import { eq, sql } from "drizzle-orm";
 import { db, blocks, documents, sections, revisions, usageLogs, workspaces } from "./db.ts";
 import { getSetting } from "./workspaces.ts";
 
-// Au-dessus de ce nombre de blocs, « tout lire » est impraticable → le gate est inactif
-// (on retombe sur recherche + signal similarExisting). Surchargeable par KB via le
-// setting "load.threshold.blocks".
+// Above this number of blocks, "reading everything" is impractical → the gate is inactive
+// (we fall back to search + similarExisting signal). Overridable per KB via the
+// "load.threshold.blocks" setting.
 const DEFAULT_THRESHOLD_BLOCKS = 200;
 
 export async function loadThreshold(wsId: string): Promise<number> {
@@ -29,8 +29,8 @@ export async function loadThreshold(wsId: string): Promise<number> {
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_THRESHOLD_BLOCKS;
 }
 
-/** Version de la KB = horodatage de sa dernière mutation curée (une révision = un
- *  changement). Pas cher, monotone, suffisant pour de la concurrence optimiste. */
+/** KB version = timestamp of its last curated mutation (one revision = one change).
+ *  Cheap, monotonic, sufficient for optimistic concurrency. */
 export async function getWorkspaceVersion(wsId: string): Promise<string> {
   const [row] = await db.select({ max: sql<string | null>`max(${revisions.createdAt})::text` })
     .from(revisions).where(eq(revisions.workspaceId, wsId));
@@ -47,10 +47,10 @@ export async function countBlocks(wsId: string): Promise<number> {
   return Number(row?.n ?? 0);
 }
 
-// ── Jeton de chargement (sans état, HMAC) ────────────────────────────────────
-// Le secret atteste « émis par mem_load » : sans lui, un agent pourrait lire la
-// version (mem_revisions) et forger un jeton. Si le secret n'est pas configuré, la
-// feature est INACTIVE (jeton null, aucun warn) — dégradation propre, pas de faux gate.
+// ── Load token (stateless, HMAC) ─────────────────────────────────────────────
+// The secret attests "issued by mem_load": without it, an agent could read the
+// version (mem_revisions) and forge a token. If the secret is not configured, the
+// feature is INACTIVE (null token, no warn) — clean degradation, no false gate.
 const loadSecret = () => Deno.env.get("MEMENTO_LOAD_SECRET") ?? "";
 
 function hex(buf: ArrayBuffer): string {
@@ -68,18 +68,18 @@ export async function makeLoadToken(wsId: string, version: string): Promise<stri
   return hex(sig);
 }
 
-// ── Chargement complet d'une KB ──────────────────────────────────────────────
+// ── Full load of a KB ─────────────────────────────────────────────────────────
 export async function loadWorkspace(wsId: string) {
   const [blockCount, threshold, version] = await Promise.all([
     countBlocks(wsId), loadThreshold(wsId), getWorkspaceVersion(wsId),
   ]);
 
   if (blockCount > threshold) {
-    // Trop gros pour un chargement intégral : le gate ne s'applique pas à cette KB.
+    // Too big for a full load: the gate does not apply to this KB.
     return {
       loaded: false as const, blockCount, threshold,
-      reason: `KB trop volumineuse pour un chargement intégral (${blockCount} blocs > seuil ${threshold}). ` +
-        `Utilise mem_doctrine + mem_search/mem_list pour cibler ; le garde-fou lecture-avant-écriture ne s'applique pas ici.`,
+      reason: `KB too large for a full load (${blockCount} blocks > threshold ${threshold}). ` +
+        `Use mem_doctrine + mem_search/mem_list to target; the read-before-write guardrail does not apply here.`,
     };
   }
 
@@ -95,7 +95,7 @@ export async function loadWorkspace(wsId: string) {
     .where(eq(sections.workspaceId, wsId))
     .orderBy(sections.position, documents.position, blocks.position);
 
-  // Regroupe en documents ordonnés (l'agent lit un fonds structuré, pas un tas de blocs).
+  // Groups into ordered documents (the agent reads a structured corpus, not a heap of blocks).
   const docMap = new Map<string, {
     id: string; title: string; status: string; section: string;
     blocks: { id: string; type: string; content: string; verifiedAt: Date | null }[];
@@ -117,23 +117,23 @@ export async function loadWorkspace(wsId: string) {
   };
 }
 
-// ── Garde-fou lecture-avant-écriture (mode WARN) ─────────────────────────────
+// ── Read-before-write guardrail (WARN mode) ──────────────────────────────────
 export type LoadGate = { ok: boolean; warning?: string };
 
 /**
- * Vérifie, AVANT une écriture, que l'agent a chargé la KB à la version courante.
- * Mode WARN : ne lève jamais — renvoie un avertissement (et journalise le miss) que
- * le handler attache à sa réponse. Inactif si la KB dépasse le seuil ou si le secret
- * n'est pas configuré.
+ * Verifies, BEFORE a write, that the agent loaded the KB at the current version.
+ * WARN mode: never throws — returns a warning (and logs the miss) that the handler
+ * attaches to its response. Inactive if the KB exceeds the threshold or if the secret
+ * is not configured.
  */
 export async function loadGate(
   sub: string, wsId: string, verb: string, loadToken: string | undefined,
 ): Promise<LoadGate> {
-  if (!loadSecret()) return { ok: true }; // feature inactive (non configurée)
+  if (!loadSecret()) return { ok: true }; // feature inactive (not configured)
 
   const blockCount = await countBlocks(wsId);
   const threshold = await loadThreshold(wsId);
-  if (blockCount > threshold) return { ok: true }; // gate inactif sur les grosses KB
+  if (blockCount > threshold) return { ok: true }; // gate inactive on large KBs
 
   const version = await getWorkspaceVersion(wsId);
   const expected = await makeLoadToken(wsId, version);
@@ -141,18 +141,18 @@ export async function loadGate(
 
   const [ws] = await db.select({ slug: workspaces.slug }).from(workspaces).where(eq(workspaces.id, wsId)).limit(1);
   const slug = ws?.slug ?? "";
-  const cause = loadToken ? "jeton périmé (la KB a changé depuis ton mem_load)" : "jeton absent (tu n'as pas appelé mem_load)";
+  const cause = loadToken ? "stale token (the KB has changed since your mem_load)" : "missing token (you didn't call mem_load)";
   const warning =
-    `Écriture sans chargement intégral de la KB : ${cause}. ` +
-    `Appelle d'abord mem_load("${slug}") puis repasse son loadToken — ça t'évite les doublons, ` +
-    `te fait placer le bloc au bon endroit et te donne les blockId pour relier (CONTRADICTS/SUPERSEDES/DEPENDS_ON). ` +
-    `[mode warn : l'écriture est passée quand même]`;
+    `Write without a full load of the KB: ${cause}. ` +
+    `Call mem_load("${slug}") first then pass back its loadToken — this avoids duplicates, ` +
+    `makes you place the block in the right spot and gives you the blockIds to link (CONTRADICTS/SUPERSEDES/DEPENDS_ON). ` +
+    `[warn mode: the write passed anyway]`;
 
-  // Journalise le miss pour mesurer la conformité (kind réservé hors USAGE_KINDS publics).
+  // Logs the miss to measure compliance (kind reserved outside public USAGE_KINDS).
   await db.insert(usageLogs).values({
     userId: sub, workspaceSlug: slug, verb, kind: "load-gate-miss",
     summary: cause, detail: `blocs=${blockCount} seuil=${threshold} version=${version}`,
-  }).catch(() => {}); // best-effort : un échec de télémétrie ne casse jamais l'écriture
+  }).catch(() => {}); // best-effort: a telemetry failure never breaks the write
 
   return { ok: false, warning };
 }

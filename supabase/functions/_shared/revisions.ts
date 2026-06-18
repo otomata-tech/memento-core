@@ -1,7 +1,7 @@
 /**
- * Lecture du journal de révisions (Lot 2). Chaque mutation curée a écrit une
- * `MemRevision` (op + motif + acteur + avant/après). Ici on l'expose en lecture,
- * filtrable par cible, du plus récent au plus ancien. Cf. spec §5.2.
+ * Reading the revision log (Batch 2). Each curated mutation wrote a
+ * `MemRevision` (op + reason + actor + before/after). Here we expose it for
+ * reading, filterable by target, from most recent to oldest. See spec §5.2.
  */
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { db, revisions, workspaces } from "./db.ts";
@@ -15,19 +15,19 @@ export async function listRevisions(args: {
 }) {
   const [ws] = await db.select({ id: workspaces.id }).from(workspaces)
     .where(eq(workspaces.slug, args.workspace)).limit(1);
-  if (!ws) throw new Error(`Workspace introuvable: ${args.workspace}`);
+  if (!ws) throw new Error(`Workspace not found: ${args.workspace}`);
 
   const conds = [eq(revisions.workspaceId, ws.id)];
   if (args.targetType) conds.push(eq(revisions.targetType, args.targetType));
   if (args.targetId) conds.push(eq(revisions.targetId, args.targetId));
   if (args.since) {
     const since = new Date(args.since);
-    if (isNaN(since.getTime())) throw new Error(`\`since\` invalide: "${args.since}" (attendu ISO 8601)`);
+    if (isNaN(since.getTime())) throw new Error(`\`since\` invalid: "${args.since}" (expected ISO 8601)`);
     conds.push(gte(revisions.createdAt, since));
   }
 
   const limit = Math.min(Math.max(args.limit ?? 50, 1), 200);
-  // total honnête : nombre de révisions correspondantes, pas le nombre retourné.
+  // honest total: number of matching revisions, not the number returned.
   const [{ n: total }] = await db.select({ n: sql<number>`count(*)::int` })
     .from(revisions).where(and(...conds));
   const rows = await db.select({

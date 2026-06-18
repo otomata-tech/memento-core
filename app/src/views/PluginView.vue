@@ -2,33 +2,33 @@
 const SKILLS = [
   {
     cmd: "/memento",
-    title: "Dispatcher de capture",
-    body: "Point d'entrée. Réfléchit à la session, auto-détecte la couche préférée du projet (ligne « Memento KB: » du CLAUDE.md), route vers les bonnes couches, et surveille la taille en proposant un ménage si besoin.",
+    title: "Capture dispatcher",
+    body: "Entry point. Reflects on the session, auto-detects the project's preferred layer (the “Memento KB:” line in CLAUDE.md), routes to the right layers, and watches size, suggesting a cleanup if needed.",
   },
   {
     cmd: "/memento:files",
-    title: "Fichiers projet",
-    body: "Capture versionnée dans le repo : la carte du projet (CLAUDE.md) et le détail par concept (docs/). Ce qui sert au repo, dans le repo.",
+    title: "Project files",
+    body: "Versioned capture in the repo: the project map (CLAUDE.md) and the per-concept detail (docs/). What serves the repo, in the repo.",
   },
   {
     cmd: "/memento:memory",
-    title: "Mémoire locale",
-    body: "Préférences, feedback récurrent, profil, références externes et pointeurs vers la base. Couche mono-poste : pour le cross-projet léger et les index, pas la donnée durable.",
+    title: "Local memory",
+    body: "Preferences, recurring feedback, profile, external references and pointers to the KB. Single-machine layer: for lightweight cross-project notes and indexes, not durable data.",
   },
   {
     cmd: "/memento:distant",
-    title: "Push vers la base",
-    body: "Pousse les faits sélectionnés vers la KB : doctrine d'abord, proposition (fait → section → source), puis stage → GO explicite → apply. Jamais d'écriture aveugle.",
+    title: "Push to the KB",
+    body: "Pushes selected facts to the KB: doctrine first, proposal (fact → section → source), then stage → explicit GO → apply. Never a blind write.",
   },
   {
     cmd: "/memento:refactor",
-    title: "Grand ménage",
-    body: "Maintenance des couches à la demande : dédoublonnage, éviction de l'état périmé, extraction vers docs/, budgets de taille (CLAUDE.md ≤ 200 lignes).",
+    title: "Deep cleanup",
+    body: "On-demand layer maintenance: deduplication, eviction of stale state, extraction to docs/, size budgets (CLAUDE.md ≤ 200 lines).",
   },
   {
     cmd: "/memento:install",
     title: "Setup",
-    body: "Vérifie le connecteur (OAuth au premier appel), fixe la KB par défaut, écrit le mapping projet → workspace dans le CLAUDE.md du projet.",
+    body: "Checks the connector (OAuth on first call), sets the default KB, writes the project → workspace mapping into the project's CLAUDE.md.",
   },
 ];
 
@@ -47,43 +47,43 @@ const INSTALL = `{
     <header class="topbar">
       <router-link to="/" class="brand brand-link">Memento<small>mento.cc</small></router-link>
       <nav class="hnav">
-        <router-link to="/">Accueil</router-link>
-        <router-link to="/login" class="cta">Se connecter</router-link>
+        <router-link to="/">Home</router-link>
+        <router-link to="/login" class="cta">Sign in</router-link>
       </nav>
     </header>
 
     <main>
-      <!-- Connecter (client-agnostic) — cible du menu « Connecter (MCP) » de l'app -->
+      <!-- Connect (client-agnostic) — target of the app's “Connect (MCP)” menu -->
       <section class="sect" id="connecter">
-        <p class="eyebrow">Connecter</p>
-        <h2>Brancher un client MCP</h2>
+        <p class="eyebrow">Connect</p>
+        <h2>Wire up an MCP client</h2>
         <p class="lede">
-          Memento est un <b>serveur MCP distant</b>, authentifié par OAuth. Branchez n'importe quel
-          client compatible sur l'endpoint — votre compte (et son périmètre de partage) suit la connexion,
-          rien à installer en local.
+          Memento is a <b>remote MCP server</b>, authenticated via OAuth. Connect any
+          compatible client to the endpoint — your account (and its sharing scope) follows the connection,
+          nothing to install locally.
         </p>
         <pre class="code">https://mcp.mento.cc/mcp</pre>
         <ul class="clients">
           <li>
-            <b>claude.ai · ChatGPT · Mistral Le Chat</b> — Réglages → Connecteurs → « Ajouter un
-            connecteur personnalisé » → coller l'URL ci-dessus → s'authentifier (OAuth au 1er usage).
+            <b>claude.ai · ChatGPT · Mistral Le Chat</b> — Settings → Connectors → “Add a
+            custom connector” → paste the URL above → authenticate (OAuth on first use).
           </li>
           <li>
             <b>Claude Code (CLI)</b> — <code>claude mcp add memento https://mcp.mento.cc/mcp --transport http</code>,
-            OAuth au premier appel. Ou installez le <b>plugin</b> (ci-dessous) : il câble le connecteur et les skills.
+            OAuth on first call. Or install the <b>plugin</b> (below): it wires up the connector and the skills.
           </li>
         </ul>
       </section>
 
       <section class="hero">
-        <p class="eyebrow">Plugin Claude Code</p>
-        <h1>La mémoire de session,<br />jusqu'à la base partagée.</h1>
+        <p class="eyebrow">Claude Code plugin</p>
+        <h1>Session memory,<br />all the way to the shared KB.</h1>
         <p class="lede">
-          Le plugin <code>memento</code> donne à Claude Code une discipline de mémoire en
-          couches : ce qui sert au repo va dans le repo, ce qui vous concerne va en mémoire
-          globale, et les <b>faits de domaine que d'autres devront connaître</b> — humains
-          ou agents — sont proposés à la base Memento. Le connecteur MCP est embarqué :
-          installer le plugin suffit.
+          The <code>memento</code> plugin gives Claude Code a layered memory
+          discipline: what serves the repo goes in the repo, what concerns you goes in global
+          memory, and the <b>domain facts others will need to know</b> — humans
+          or agents — are proposed to the Memento KB. The MCP connector is bundled:
+          installing the plugin is enough.
         </p>
       </section>
 
@@ -99,30 +99,30 @@ const INSTALL = `{
         </div>
       </section>
 
-      <!-- Doctrine de routage -->
+      <!-- Routing doctrine -->
       <section class="sect">
-        <p class="eyebrow">Où va quoi</p>
+        <p class="eyebrow">Where what goes</p>
         <table class="route">
           <tbody>
             <tr>
-              <td class="what">Gotchas de repo, commandes, conventions</td>
-              <td class="where"><code>CLAUDE.md</code> du projet</td>
+              <td class="what">Repo gotchas, commands, conventions</td>
+              <td class="where">project <code>CLAUDE.md</code></td>
             </tr>
             <tr>
-              <td class="what">Préférences et feedbacks de l'utilisateur</td>
-              <td class="where">mémoire globale</td>
+              <td class="what">User preferences and feedback</td>
+              <td class="where">global memory</td>
             </tr>
             <tr>
-              <td class="what">Fait de mission, règle métier, décision qui fait doctrine</td>
-              <td class="where"><b>KB Memento</b> — bloc sourcé (citation + ref joignable)</td>
+              <td class="what">Mission fact, business rule, decision that sets doctrine</td>
+              <td class="where"><b>Memento KB</b> — sourced block (citation + attachable ref)</td>
             </tr>
           </tbody>
         </table>
         <p class="note">
-          Granularité des bases : un <b>périmètre de partage</b> par KB (une par
-          mission/client, une perso) — pas une base par repo, pas de fourre-tout.
-          Seul <code>/memento:distant</code> écrit dans la base, via la boucle
-          propose-valide, après sélection et GO explicite.
+          KB granularity: one <b>sharing scope</b> per KB (one per
+          mission/client, one personal) — not one KB per repo, no catch-all.
+          Only <code>/memento:distant</code> writes to the KB, via the
+          propose-validate loop, after selection and an explicit GO.
         </p>
       </section>
 
@@ -131,21 +131,21 @@ const INSTALL = `{
         <p class="eyebrow">Installation</p>
         <ol class="steps">
           <li>
-            <b>Accès.</b> Les bases sont privées (orgs/rôles) : il faut avoir été invité —
-            <a href="mailto:hello@mento.cc">demander un accès</a>.
+            <b>Access.</b> The KBs are private (orgs/roles): you must have been invited —
+            <a href="mailto:hello@mento.cc">request access</a>.
           </li>
           <li>
-            <b>Déclarer le plugin</b> dans <code>~/.claude/settings.json</code> :
+            <b>Declare the plugin</b> in <code>~/.claude/settings.json</code>:
             <pre class="code">{{ INSTALL }}</pre>
           </li>
           <li>
-            <b>Nouvelle session</b> : les skills apparaissent, le connecteur
-            <code>https://mcp.mento.cc/mcp</code> est ajouté. Le premier appel d'un
-            outil <code>mem_*</code> ouvre le flow OAuth (login + consentement).
+            <b>New session</b>: the skills appear, the connector
+            <code>https://mcp.mento.cc/mcp</code> is added. The first call of a
+            <code>mem_*</code> tool opens the OAuth flow (login + consent).
           </li>
           <li>
-            <b>Dans un projet</b> : <code>/memento:install</code> câble la KB du projet,
-            puis <code>/memento</code> en fin de session.
+            <b>In a project</b>: <code>/memento:install</code> wires up the project's KB,
+            then <code>/memento</code> at the end of the session.
           </li>
         </ol>
       </section>
@@ -153,7 +153,7 @@ const INSTALL = `{
 
     <footer class="foot">
       <span class="brand-foot">Memento</span>
-      <span class="muted">un projet <a href="https://otomata.tech">Otomata</a></span>
+      <span class="muted">an <a href="https://otomata.tech">Otomata</a> project</span>
     </footer>
   </div>
 </template>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// « Graphe » — un bloc centré, ses voisins par relation typée. Contradictions/remplacements
-// (les cas précieux) à gauche en rouge ; appuis (dépend/référence) à droite en bleu.
+// “Graph” — one centered block, its neighbors by typed relation. Contradictions/supersessions
+// (the valuable cases) on the left in red; supports (depends/references) on the right in blue.
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, type Block, type SectionNode } from "../api";
@@ -23,8 +23,8 @@ const has = (rels: string[]) => rels.some((r) => groups.value[r]?.length);
 const noNeighbours = computed(() => center.value !== null && Object.keys(groups.value).length === 0);
 
 async function resolveDefault(): Promise<string | null> {
-  // Marche l'arbre (les documents vivent souvent dans les sous-sections) ; privilégie
-  // un bloc qui a des liens (graphe non vide), sinon retombe sur le premier bloc trouvé.
+  // Walk the tree (documents often live in sub-sections); prefer
+  // a block that has links (non-empty graph), otherwise fall back to the first block found.
   const d = await api.doctrine(ws.value);
   const flat: SectionNode[] = [];
   const walk = (ns: SectionNode[]) => ns.forEach((n) => { flat.push(n); if (n.children?.length) walk(n.children); });
@@ -79,19 +79,19 @@ watch(() => route.fullPath, syncFromRoute, { immediate: true });
 <template>
   <AppShell page="graph" :ws="ws">
     <template #crumbs>
-      <span>graphe · <b v-if="center">centré sur {{ center.id.slice(0, 8) }}</b><b v-else>—</b></span>
+      <span>graph · <b v-if="center">centered on {{ center.id.slice(0, 8) }}</b><b v-else>—</b></span>
     </template>
 
     <div class="bd">
       <div v-if="center" class="graph" style="width:100%">
         <div class="gtitle">
-          <h1>Traverser par le sens</h1>
+          <h1>Traverse by meaning</h1>
           <span class="mono" style="font-size:11px;color:var(--color-faint)">mem_links · {{ center.id.slice(0, 8) }}</span>
         </div>
-        <p class="gsub">Centré sur un bloc, on suit ses liens typés. Les contradictions et remplacements — les cas précieux — sont signalés en rouge.</p>
+        <p class="gsub">Centered on a block, you follow its typed links. Contradictions and supersessions — the valuable cases — are flagged in red.</p>
 
         <div class="gcanvas">
-          <!-- Gauche : tensions -->
+          <!-- Left: tensions -->
           <div class="gcol">
             <template v-if="has(LEFT)">
               <template v-for="rel in LEFT" :key="rel">
@@ -101,14 +101,14 @@ watch(() => route.fullPath, syncFromRoute, { immediate: true });
                 </template>
               </template>
             </template>
-            <div v-else class="clabel">aucune tension</div>
+            <div v-else class="clabel">no tension</div>
           </div>
 
-          <!-- Centre -->
+          <!-- Center -->
           <div class="gcol">
-            <div class="gconnect">— bloc centré —</div>
+            <div class="gconnect">— centered block —</div>
             <div class="gcenter" :class="roleClass(center.type)">
-              <span class="pin">● centré</span>
+              <span class="pin">● centered</span>
               <div class="bhead">
                 <span class="badge">{{ center.type }}</span>
                 <span class="mono" style="font-size:11px;color:var(--color-faint)">{{ center.id.slice(0, 8) }}</span>
@@ -118,12 +118,12 @@ watch(() => route.fullPath, syncFromRoute, { immediate: true });
               <div v-if="center.sources.length" class="rels" style="margin-top:9px">
                 <span class="src"><span class="kk">{{ center.sources[0].kind ?? 'SRC' }}</span>{{ center.sources[0].title }}</span>
               </div>
-              <div class="act" style="margin-top:11px"><button class="btn go" @click="readBlock">⌖ lire ce bloc</button></div>
+              <div class="act" style="margin-top:11px"><button class="btn go" @click="readBlock">⌖ read this block</button></div>
             </div>
-            <div class="gconnect">clic un voisin pour recentrer ↑</div>
+            <div class="gconnect">click a neighbor to recenter ↑</div>
           </div>
 
-          <!-- Droite : appuis -->
+          <!-- Right: supports -->
           <div class="gcol">
             <template v-if="has(RIGHT)">
               <template v-for="rel in RIGHT" :key="rel">
@@ -133,25 +133,25 @@ watch(() => route.fullPath, syncFromRoute, { immediate: true });
                 </template>
               </template>
             </template>
-            <div v-else class="clabel">aucun appui</div>
+            <div v-else class="clabel">no support</div>
           </div>
         </div>
 
         <div class="glegend">
-          <span class="eb">Types de liens</span>
-          <span class="rel warn">⚡ contredit</span>
-          <span class="rel warn">⇡ remplace</span>
-          <span class="rel accent">⇠ dépend de</span>
-          <span class="rel accent">→ référence</span>
+          <span class="eb">Link types</span>
+          <span class="rel warn">⚡ contradicts</span>
+          <span class="rel warn">⇡ supersedes</span>
+          <span class="rel accent">⇠ depends on</span>
+          <span class="rel accent">→ references</span>
         </div>
         <p v-if="noNeighbours" class="gsub" style="margin-top:16px">
-          Ce bloc n'a pas encore de liens typés. Les liens (référence, dépend de, contredit, remplace)
-          se créent à l'ingestion ou à la curation — voir la <b>Boucle</b>.
+          This block doesn't have any typed links yet. Links (references, depends on, contradicts, supersedes)
+          are created at ingestion or curation — see the <b>Loop</b>.
         </p>
       </div>
-      <p v-else-if="loading" class="pagemsg">Chargement…</p>
+      <p v-else-if="loading" class="pagemsg">Loading…</p>
       <p v-else-if="error" class="pagemsg err">{{ error }}</p>
-      <p v-else class="pagemsg">Aucun bloc à centrer — ouvre un bloc depuis « Lire ».</p>
+      <p v-else class="pagemsg">No block to center — open a block from “Read”.</p>
     </div>
   </AppShell>
 </template>

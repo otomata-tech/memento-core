@@ -1,31 +1,31 @@
 /**
- * Rate limiting applicatif (issue #67, finding #2 audit sécu). Compteur à fenêtre
- * fixe par (utilisateur, bucket), backé Postgres (table `mem_rate_limits`, état
- * partagé entre les isolates Edge stateless). Cible les verbes à effet de bord
- * coûteux : invitations (emails GoTrue), createOrg, recherche globale.
+ * Application-level rate limiting (issue #67, finding #2 security audit). Fixed-window
+ * counter per (user, bucket), backed by Postgres (table `mem_rate_limits`, state
+ * shared across the stateless Edge isolates). Targets the costly side-effecting
+ * verbs: invitations (GoTrue emails), createOrg, global search.
  *
- * Défense applicative (par `sub` ET par verbe) ; complémentaire d'un éventuel WAF
- * Cloudflare par IP (cf. docs/deployment-edge.md). Le limiteur n'est PAS une
- * barrière d'autorisation : il borne le débit, pas le droit.
+ * Application-level defense (per `sub` AND per verb); complementary to a possible
+ * Cloudflare WAF by IP (see docs/deployment-edge.md). The limiter is NOT an
+ * authorization barrier: it bounds throughput, not the right.
  */
 import { sql } from "drizzle-orm";
 import { db } from "./db.ts";
 
-/** Dépassement de débit — mappé en 429 (REST) / message agent (MCP) aux boundaries. */
+/** Throughput exceeded — mapped to 429 (REST) / agent message (MCP) at the boundaries. */
 export class RateLimitError extends Error {}
 
-/** Plafonds par bucket : { max appels, fenêtre en secondes }. */
+/** Caps per bucket: { max calls, window in seconds }. */
 export const LIMITS = {
-  invite: { max: 20, windowSec: 3600 }, // emails d'invitation (grant + membres)
+  invite: { max: 20, windowSec: 3600 }, // invitation emails (grant + members)
   create_org: { max: 10, windowSec: 3600 },
   search_global: { max: 60, windowSec: 60 },
-  // Recherche publique : seuls les appels AUTHENTIFIÉS sont comptés (sub vide =
-  // no-op, cf. assertWithinLimit) ; l'anonyme est borné par le WAF Cloudflare/IP.
+  // Public search: only AUTHENTICATED calls are counted (empty sub =
+  // no-op, see assertWithinLimit); anonymous traffic is bounded by the Cloudflare/IP WAF.
   search_public: { max: 60, windowSec: 60 },
-  // Agent public (mode chat d'une KB publique). Surface anonyme et coûteuse (LLM) :
-  // débit borné PAR IP (assertWithinLimitByKey, comptée même sans sub) + un plafond
-  // de TOKENS journalier GLOBAL (recordUsage/currentUsage) qui borne la facture quel
-  // que soit le nombre d'IP. `max` du budget = total_tokens/jour (env AGENT_DAILY_TOKEN_BUDGET).
+  // Public agent (chat mode of a public KB). Anonymous and costly surface (LLM):
+  // throughput bounded PER IP (assertWithinLimitByKey, counted even without a sub) + a GLOBAL
+  // daily TOKEN cap (recordUsage/currentUsage) that bounds the bill regardless
+  // of the number of IPs. budget `max` = total_tokens/day (env AGENT_DAILY_TOKEN_BUDGET).
   agent_ip_min: { max: 8, windowSec: 60 },
   agent_ip_hour: { max: 40, windowSec: 3600 },
   agent_budget: { max: Number(Deno.env.get("AGENT_DAILY_TOKEN_BUDGET") ?? "2000000"), windowSec: 86400 },
@@ -34,9 +34,9 @@ export const LIMITS = {
 export type Bucket = keyof typeof LIMITS;
 
 /**
- * Incrémente atomiquement le compteur de la fenêtre courante de `by` et renvoie le
- * total. Fenêtre alignée sur l'horloge serveur (now() Postgres) pour éviter le
- * clock-skew entre isolates. `key` = identité de comptage (sub, IP, ou clé globale).
+ * Atomically increments the current window's counter by `by` and returns the
+ * total. Window aligned on the server clock (Postgres now()) to avoid
+ * clock-skew between isolates. `key` = counting identity (sub, IP, or global key).
  */
 async function bumpWindow(key: string, bucket: Bucket, by: number): Promise<number> {
   const { windowSec } = LIMITS[bucket];
@@ -57,26 +57,26 @@ async function bumpWindow(key: string, bucket: Bucket, by: number): Promise<numb
 function limitError(bucket: Bucket): RateLimitError {
   const { max, windowSec } = LIMITS[bucket];
   return new RateLimitError(
-    `trop de requêtes (${bucket}) : maximum ${max} par ${Math.round(windowSec / 60) || 1} min — réessaie plus tard`,
+    `too many requests (${bucket}): maximum ${max} per ${Math.round(windowSec / 60) || 1} min — try again later`,
   );
 }
 
-/** Débit par `sub` (utilisateur). Anonyme (sub vide) = no-op : déjà rejeté par
- *  l'auth en amont, ou borné par le WAF/IP. */
+/** Throughput per `sub` (user). Anonymous (empty sub) = no-op: already rejected by
+ *  the upstream auth, or bounded by the WAF/IP. */
 export async function assertWithinLimit(sub: string, bucket: Bucket): Promise<void> {
   if (!sub) return;
   if (await bumpWindow(sub, bucket, 1) > LIMITS[bucket].max) throw limitError(bucket);
 }
 
-/** Débit par clé arbitraire NON vide (ex. IP sur une surface anonyme). Contrairement
- *  à assertWithinLimit, compte toujours — c'est la borne anti-rafale de l'anonyme. */
+/** Throughput per arbitrary NON-empty key (e.g. IP on an anonymous surface). Unlike
+ *  assertWithinLimit, always counts — it's the anti-burst bound for anonymous traffic. */
 export async function assertWithinLimitByKey(key: string, bucket: Bucket): Promise<void> {
   if (!key) return;
   if (await bumpWindow(key, bucket, 1) > LIMITS[bucket].max) throw limitError(bucket);
 }
 
-/** Total courant de la fenêtre (sans incrémenter) — pour vérifier un plafond avant
- *  d'engager un coût (ex. budget tokens journalier). */
+/** Current window total (without incrementing) — to check a cap before
+ *  incurring a cost (e.g. daily token budget). */
 export async function currentUsage(key: string, bucket: Bucket): Promise<number> {
   const { windowSec } = LIMITS[bucket];
   const rows = await db.execute<{ count: number }>(sql`
@@ -87,7 +87,7 @@ export async function currentUsage(key: string, bucket: Bucket): Promise<number>
   return Number(rows[0]?.count ?? 0);
 }
 
-/** Ajoute une consommation mesurée (ex. tokens LLM) au compteur de fenêtre. */
+/** Adds measured consumption (e.g. LLM tokens) to the window counter. */
 export async function recordUsage(key: string, bucket: Bucket, amount: number): Promise<void> {
   if (amount > 0) await bumpWindow(key, bucket, amount);
 }

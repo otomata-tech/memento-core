@@ -1,13 +1,13 @@
 /**
- * Journal des appels de tools MCP — port Deno/TS d'otomata-calllog
- * (lib Python du monorepo otomata ; même contrat de ligne, table `tool_calls`,
- * migration 0012). Une ligne par verbe appelé : sub, tool, args tronqués,
+ * MCP tool call log — Deno/TS port of otomata-calllog
+ * (Python lib from the otomata monorepo; same row contract, `tool_calls` table,
+ * migration 0012). One row per verb called: sub, tool, truncated args,
  * ok/error, duration_ms, server="memento".
  *
- * Fire-and-forget : l'écriture ne retarde jamais la réponse et un échec ne
- * fait pas échouer le verbe. Sur Supabase Edge, une promesse pendante après
- * la réponse peut être tuée par l'isolate → EdgeRuntime.waitUntil quand
- * disponible (local Deno : simple .catch()).
+ * Fire-and-forget: the write never delays the response and a failure never
+ * fails the verb. On Supabase Edge, a promise still pending after the response
+ * can be killed by the isolate → EdgeRuntime.waitUntil when available
+ * (local Deno: plain .catch()).
  */
 import { sql } from "drizzle-orm";
 import { db } from "./db.ts";
@@ -30,7 +30,7 @@ function truncatedArgs(args: unknown): Record<string, unknown> | null {
 }
 
 function fireAndForget(p: Promise<unknown>): void {
-  const guarded = p.catch((e) => console.error("journalisation tool_call en échec:", e));
+  const guarded = p.catch((e) => console.error("tool_call logging failed:", e));
   // deno-lint-ignore no-explicit-any
   (globalThis as any).EdgeRuntime?.waitUntil?.(guarded);
 }
@@ -45,7 +45,7 @@ function record(row: {
             ${row.ok}, ${row.error}, ${row.durationMs})`));
 }
 
-/** Enrobe le handler d'un verbe : journalise l'appel (succès, erreur levée, isError MCP). */
+/** Wraps a verb handler: logs the call (success, thrown error, MCP isError). */
 export function withCallLog<A, R extends { isError?: boolean }>(
   tool: string,
   sub: string,

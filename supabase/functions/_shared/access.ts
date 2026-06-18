@@ -1,11 +1,11 @@
 /**
- * Contrôle d'accès par workspace (issue #60). L'org est le TENANT (annuaire) ;
- * chaque KB porte son périmètre : `visibility` (`org` = les membres de l'org y
- * accèdent avec leur rôle d'org ; `private` = grants explicites seuls) + grants
- * individuels (`mem_workspace_grants`), externes compris.
+ * Per-workspace access control (issue #60). The org is the TENANT (directory);
+ * each KB carries its own scope: `visibility` (`org` = org members access it with
+ * their org role; `private` = explicit grants only) + individual grants
+ * (`mem_workspace_grants`), externals included.
  *
- * Rôle effectif = max(grant explicite, rôle d'org si visibility=org).
- * Granularité = workspace entier — pas d'ACL par section/document.
+ * Effective role = max(explicit grant, org role if visibility=org).
+ * Granularity = whole workspace — no per-section/document ACL.
  */
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db, orgs, memberships, workspaces, workspaceGrants, sections, documents, blocks, ingestions, links, comments } from "./db.ts";
@@ -16,22 +16,22 @@ import { splitPath } from "./paths.ts";
 
 export class AccessError extends Error {}
 
-/** Message indistinct : « introuvable » et « interdit » donnent la MÊME réponse,
- *  pour ne pas faire de l'erreur un oracle d'existence cross-tenant (les slugs de
- *  KB sont uniques et devinables). */
-const NOT_FOUND_OR_FORBIDDEN = "ressource introuvable ou accès refusé";
+/** Indistinct message: "not found" and "forbidden" give the SAME response, so as
+ *  not to turn the error into a cross-tenant existence oracle (KB slugs are unique
+ *  and guessable). */
+const NOT_FOUND_OR_FORBIDDEN = "resource not found or access denied";
 
 /**
- * Message d'erreur sûr à renvoyer au client. Masque les erreurs du driver
- * Postgres (SQLSTATE/severity) qui révéleraient le schéma ; laisse passer les
- * erreurs applicatives intentionnelles (validation, « introuvable »).
+ * Safe error message to return to the client. Masks Postgres driver errors
+ * (SQLSTATE/severity) that would reveal the schema; lets intentional application
+ * errors through (validation, "not found").
  */
 export function safeErrorMessage(e: unknown): string {
   const anyE = e as { code?: unknown; severity?: unknown };
   const looksLikeDbError =
     (typeof anyE?.code === "string" && /^[0-9A-Z]{5}$/.test(anyE.code)) ||
     typeof anyE?.severity === "string";
-  if (looksLikeDbError) return "erreur interne";
+  if (looksLikeDbError) return "internal error";
   return e instanceof Error ? e.message : String(e);
 }
 
@@ -44,18 +44,18 @@ export async function userOrgIds(sub: string): Promise<string[]> {
 }
 
 /**
- * Rôle effectif du user sur un workspace — null = aucun accès.
+ * Effective role of the user on a workspace — null = no access.
  *
- * Périmètre `public` : la lecture (`member`) est accordée à TOUT le monde, y
- * compris l'anonyme (`sub === ""`). L'org propriétaire garde néanmoins son rôle
- * d'org (elle peut curer SA base publique) ; les grants élèvent toujours. Donc
- * une KB publique = `org` + lecture mondiale, jamais une rétrogradation de l'org.
+ * `public` scope: read (`member`) is granted to EVERYONE, including the anonymous
+ * user (`sub === ""`). The owning org nonetheless keeps its org role (it can curate
+ * ITS public base); grants always elevate. So a public KB = `org` + worldwide read,
+ * never a downgrade of the org.
  */
 export async function effectiveRole(sub: string, wsId: string): Promise<string | null> {
   const [ws] = await db.select({ orgId: workspaces.orgId, visibility: workspaces.visibility })
     .from(workspaces).where(eq(workspaces.id, wsId)).limit(1);
   if (!ws) return null;
-  // L'anonyme n'a ni grant ni membership : seul le périmètre public lui ouvre la lecture.
+  // The anonymous user has neither grant nor membership: only the public scope opens read for them.
   const [g] = sub
     ? await db.select({ role: workspaceGrants.role }).from(workspaceGrants)
         .where(and(eq(workspaceGrants.workspaceId, wsId), eq(workspaceGrants.userId, sub))).limit(1)
@@ -67,16 +67,16 @@ export async function effectiveRole(sub: string, wsId: string): Promise<string |
     if (m && (!best || (ROLE_RANK[m.role] ?? 0) > (ROLE_RANK[best] ?? 0))) best = m.role;
   }
   if (ws.visibility === "public" && (!best || (ROLE_RANK.member > (ROLE_RANK[best] ?? 0)))) {
-    best = "member"; // lecture mondiale (plancher), jamais au-dessus d'un rôle déjà acquis
+    best = "member"; // worldwide read (floor), never above an already-acquired role
   }
   return best;
 }
 
 /**
- * Ids des workspaces accessibles : (KB `org`/`public` de ses orgs) ∪ (KB grantées).
- * Les KB publiques d'AUTRES orgs n'y figurent PAS (sinon la liste « mes bases »
- * gonflerait de tout le public) — on les découvre par la galerie / recherche
- * publique, ou en les épinglant explicitement (cf. getDefaultWorkspace).
+ * Ids of accessible workspaces: (`org`/`public` KBs of one's orgs) ∪ (granted KBs).
+ * Public KBs of OTHER orgs do NOT appear here (otherwise the "my bases" list would
+ * balloon with all the public ones) — they are discovered via the gallery / public
+ * search, or by explicitly pinning them (cf. getDefaultWorkspace).
  */
 export async function accessibleWorkspaceIds(sub: string): Promise<string[]> {
   if (!sub) return [];
@@ -90,7 +90,7 @@ export async function accessibleWorkspaceIds(sub: string): Promise<string[]> {
   return [...new Set([...viaOrg.map((r) => r.id), ...viaGrant.map((r) => r.id)])];
 }
 
-/** Réfs {id, slug, org} des KB publiques (non archivées) — galerie + recherche publique. */
+/** Refs {id, slug, org} of public KBs (not archived) — gallery + public search. */
 export async function publicWorkspaceRefs(): Promise<{ id: string; slug: string; org: string | null }[]> {
   const rows = await db
     .select({ id: workspaces.id, slug: workspaces.slug, org: orgs.slug })
@@ -100,13 +100,13 @@ export async function publicWorkspaceRefs(): Promise<{ id: string; slug: string;
   return [...rows];
 }
 
-/** Résout l'id du workspace ciblé depuis n'importe quel point d'entrée des verbes. */
+/** Resolves the targeted workspace id from any verb entry point. */
 type Kind = "section" | "document" | "block" | "ingestion" | "link" | "comment";
 
 export async function resolveWorkspaceId(ref: {
   workspace?: string;
   path?: string;
-  id?: string; // section/document/block/ingestion/link/comment selon le verbe
+  id?: string; // section/document/block/ingestion/link/comment depending on the verb
   kind?: Kind;
 }): Promise<string | null> {
   if (ref.workspace) {
@@ -141,7 +141,7 @@ export async function resolveWorkspaceId(ref: {
         .where(eq(comments.id, ref.id)).limit(1);
       return c ? resolveWorkspaceId({ id: c.tid, kind: c.t.toLowerCase() as Kind }) : null;
     }
-    // document/block → remonte jusqu'à la section puis au workspace
+    // document/block → walks up to the section then to the workspace
     let sectionId: string | undefined;
     if (ref.kind === "document") {
       const [d] = await db.select({ sec: documents.sectionId }).from(documents)
@@ -164,7 +164,7 @@ export async function resolveWorkspaceId(ref: {
   return null;
 }
 
-/** Lève AccessError si le user n'a pas accès au workspace ciblé (write ⇒ rôle admin/curator). */
+/** Throws AccessError if the user has no access to the targeted workspace (write ⇒ admin/curator role). */
 export async function assertAccess(
   sub: string,
   ref: { workspace?: string; path?: string; id?: string; kind?: Kind },
@@ -176,33 +176,33 @@ export async function assertAccess(
   if (!role) throw new AccessError(NOT_FOUND_OR_FORBIDDEN);
   if (opts?.write) {
     if ((ROLE_RANK[role] ?? 0) < WRITE_RANK) {
-      throw new AccessError("écriture réservée aux rôles admin/curator");
+      throw new AccessError("writing restricted to admin/curator roles");
     }
-    // L'archivage gèle l'écriture : une KB archivée est en lecture seule jusqu'à
-    // réactivation (sinon l'archivage ne révoquerait rien par accès direct).
+    // Archiving freezes writes: an archived KB is read-only until reactivation
+    // (otherwise archiving would revoke nothing via direct access).
     const [ws] = await db.select({ archivedAt: workspaces.archivedAt })
       .from(workspaces).where(eq(workspaces.id, wsId)).limit(1);
-    if (ws?.archivedAt) throw new AccessError("KB archivée : écriture impossible (réactive-la d'abord)");
+    if (ws?.archivedAt) throw new AccessError("archived KB: writing impossible (reactivate it first)");
   }
 }
 
 /**
- * Lève AccessError si le user n'est pas ADMIN DE L'ORG propriétaire de la KB.
- * La gouvernance (partage, visibilité, archivage, transfert) est un acte de
- * tenant — un grant par base ne la délègue jamais (décision 2026-06-12 :
- * grants = member|curator, lecture/écriture seulement).
+ * Throws AccessError if the user is not an ADMIN OF THE ORG owning the KB.
+ * Governance (sharing, visibility, archiving, transfer) is a tenant act — a per-base
+ * grant never delegates it (decision 2026-06-12: grants = member|curator,
+ * read/write only).
  */
 export async function assertWorkspaceAdmin(sub: string, slug: string): Promise<void> {
   const [w] = await db.select({ orgId: workspaces.orgId }).from(workspaces)
     .where(eq(workspaces.slug, slug)).limit(1);
   if (!w) throw new AccessError(NOT_FOUND_OR_FORBIDDEN);
-  if (!w.orgId) throw new AccessError("KB sans org propriétaire");
+  if (!w.orgId) throw new AccessError("KB without owning org");
   const [m] = await db.select({ role: memberships.role }).from(memberships)
     .where(and(eq(memberships.orgId, w.orgId), eq(memberships.userId, sub))).limit(1);
-  if (m?.role !== "admin") throw new AccessError("réservé aux admins de l'org propriétaire");
+  if (m?.role !== "admin") throw new AccessError("admins of the owning org only");
 }
 
-/** Id du workspace d'un document/bloc (pour journaliser une révision). */
+/** Workspace id of a document/block (to log a revision). */
 export async function workspaceIdForTarget(
   kind: "document" | "block",
   id: string,

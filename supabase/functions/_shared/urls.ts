@@ -1,21 +1,21 @@
 /**
- * Lien viewer canonique échoué par les verbes de lecture (mem_document,
- * mem_block, hits de mem_search). Sans URL fournie, l'agent en fabrique une
- * plausible sur le host du connecteur (mcp.mento.cc/doc/<id>) — qui redirige
- * vers la vitrine. Le serveur reste bête : simple concaténation.
+ * Canonical viewer link echoed by the read verbs (mem_document, mem_block,
+ * mem_search hits). Without a provided URL, the agent fabricates a plausible
+ * one on the connector host (mcp.mento.cc/doc/<id>) — which redirects to the
+ * landing site. The server stays dumb: plain concatenation.
  */
 export function docUrl(workspaceSlug: string, documentId: string, blockId?: string): string {
   const url = `${appBase()}/w/${workspaceSlug}/doc/${documentId}`;
   return blockId ? `${url}?block=${blockId}` : url;
 }
 
-/** Lien vers la Boucle (file de validation), ancré sur une ingestion (`?ing=`). */
+/** Link to the Loop (validation queue), anchored on an ingestion (`?ing=`). */
 export function loopUrl(workspaceSlug: string, ingestionId: string): string {
   return `${appBase()}/w/${workspaceSlug}/loop?ing=${ingestionId}`;
 }
 
 function appBase(): string {
   const base = (Deno.env.get("MEMENTO_APP_URL") ?? "").replace(/\/+$/, "");
-  if (!base) throw new Error("MEMENTO_APP_URL absent (liens viewer)");
+  if (!base) throw new Error("MEMENTO_APP_URL missing (viewer links)");
   return base;
 }

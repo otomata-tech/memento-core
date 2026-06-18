@@ -1,8 +1,8 @@
 /**
- * Énumération/agrégation DÉTERMINISTE (#41, audit D2/§6.1) : le complément
- * exhaustif de mem_search (top-k). Recall 100 % par construction — SQL pur,
- * zéro embedding. Lignes compactes + totalCount/hasMore + curseur keyset
- * (updated_at, id), stable même si la KB bouge entre deux pages.
+ * DETERMINISTIC enumeration/aggregation (#41, audit D2/§6.1): the exhaustive
+ * complement to mem_search (top-k). 100% recall by construction — pure SQL,
+ * zero embedding. Compact rows + totalCount/hasMore + keyset cursor
+ * (updated_at, id), stable even if the KB moves between two pages.
  */
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "./db.ts";
@@ -30,20 +30,20 @@ function decodeCursor(cursor: string): { u: string; id: string } {
     if (typeof u !== "string" || typeof id !== "string") throw new Error();
     return { u, id };
   } catch {
-    throw new Error("`cursor` invalide — reprends celui renvoyé par la page précédente");
+    throw new Error("invalid `cursor` — use the one returned by the previous page");
   }
 }
 
-/** Première ligne, bornée — la ligne compacte ne coûte jamais un bloc entier. */
+/** First line, bounded — the compact row never costs a whole block. */
 function excerptOf(contentHead: string): string {
   const line = contentHead.split("\n")[0];
   return line.length > 100 ? `${line.slice(0, 100)}…` : line;
 }
 
 /**
- * Conditions WHERE communes list/count. Jamais d'acceptation muette : un filtre
- * non applicable au `kind` est une erreur. Retourne null si `sectionPath` ne
- * matche aucune section (résultat vide légitime, pas une erreur).
+ * Common WHERE conditions for list/count. Never a silent acceptance: a filter
+ * not applicable to the `kind` is an error. Returns null if `sectionPath`
+ * matches no section (legitimate empty result, not an error).
  */
 function buildConds(
   kind: ListKind,
@@ -53,10 +53,10 @@ function buildConds(
 ): SQL[] | null {
   for (const k of BLOCK_ONLY) {
     if (kind === "documents" && f[k] !== undefined) {
-      throw new Error(`\`${k}\` non applicable à kind=documents`);
+      throw new Error(`\`${k}\` not applicable to kind=documents`);
     }
   }
-  const t = kind === "blocks" ? sql`b` : sql`d`; // porteur de updated_at
+  const t = kind === "blocks" ? sql`b` : sql`d`; // carrier of updated_at
   const conds = [sql`s.workspace_id = ${wsId}`];
   if (f.blockType) conds.push(sql`b.type = ${f.blockType}::mem_block_type`);
   if (f.docStatus) conds.push(sql`d.status = ${f.docStatus}::mem_doc_status`);
@@ -99,7 +99,7 @@ export async function listItems(
   if (!conds) return { kind, items: [], totalCount: 0, hasMore: false, cursor: null };
   const where = sql.join(conds, sql` AND `);
 
-  // totalCount = correspondants du filtre, SANS curseur (stable d'une page à l'autre).
+  // totalCount = filter matches, WITHOUT cursor (stable from one page to the next).
   const [{ n: totalCount }] = await db.execute<{ n: number }>(
     sql`SELECT count(*)::int AS n ${FROM[kind]} WHERE ${where}`,
   );
@@ -209,7 +209,7 @@ export async function countItems(
 ) {
   const kind = args.kind ?? "blocks";
   if (args.groupBy === "type" && kind === "documents") {
-    throw new Error("`groupBy: type` non applicable à kind=documents (type est une propriété de bloc)");
+    throw new Error("`groupBy: type` not applicable to kind=documents (type is a block property)");
   }
   const ws = await resolveWorkspaceBySlug(args.workspace);
   const pathMap = await loadSectionPathMap(ws.id, ws.slug);

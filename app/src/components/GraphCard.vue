@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Carte d'un bloc voisin dans le Graphe. Clic → recentre le graphe sur ce bloc.
+// Card for a neighboring block in the Graph. Click → re-centers the graph on this block.
 import type { Block } from "../api";
 import { roleClass, trustMark, renderMd } from "../lib/blocks";
 
@@ -15,6 +15,6 @@ const emit = defineEmits<{ (e: "recenter", id: string): void }>();
       <span class="vmark" :class="trustMark(block)[0]" style="margin-left:auto">{{ trustMark(block)[1] }}</span>
     </div>
     <div class="btext" style="font-size:13px" v-html="renderMd(block.content)" />
-    <div v-if="note" class="gnote">« {{ note }} »</div>
+    <div v-if="note" class="gnote">"{{ note }}"</div>
   </div>
 </template>

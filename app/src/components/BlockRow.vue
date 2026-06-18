@@ -1,8 +1,8 @@
 <script setup lang="ts">
-// Un bloc typé dans la colonne du Lecteur : le texte (md) en colonne de lecture,
-// les métadonnées (badge, id, marque de confiance) en marge latérale gauche ;
-// sources, chips de liens typés et commentaires en note sous le texte.
-// Clic → focalise le dossier.
+// A typed block in the Reader column: the text (md) in the reading column,
+// the metadata (badge, id, trust mark) in the left side margin;
+// sources, typed-link chips and comments as a note below the text.
+// Click → focuses the dossier.
 import type { Block } from "../api";
 import { roleClass, trustMark, renderMd, safeHref, RELLABEL, RELGLYPH, relClass } from "../lib/blocks";
 
@@ -42,7 +42,7 @@ const mark = () => trustMark(props.block);
           {{ l.fromBlockId?.slice(0, 8) }} {{ RELLABEL[l.relation] }} {{ RELGLYPH[l.relation] }}
         </span>
         <span v-for="c in block.comments" :key="c.id" class="cmt">
-          {{ c.authorKind === "agent" ? "🤖" : "🧑" }} {{ c.body }}<span v-if="c.resolvedAt"> · résolu</span>
+          {{ c.authorKind === "agent" ? "🤖" : "🧑" }} {{ c.body }}<span v-if="c.resolvedAt"> · resolved</span>
         </span>
       </div>
     </div>

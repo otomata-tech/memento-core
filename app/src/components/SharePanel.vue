@@ -1,7 +1,7 @@
 <script setup lang="ts">
-// Panneau « Partager » d'une base — le geste de partage de premier ordre (à la
-// Notion). Réutilisé par le popover de la barre (AppShell) et la page org/Bases.
-// Gating serveur : admins de l'org propriétaire (les autres voient le refus).
+// "Share" panel for a knowledge base — the first-class sharing gesture (Notion-style).
+// Reused by the bar popover (AppShell) and the org/Bases page.
+// Server gating: admins of the owning org (others see the refusal).
 import { onMounted, ref } from "vue";
 import { api, type WorkspaceAccess, type WorkspaceGrant } from "../api";
 
@@ -29,10 +29,10 @@ async function changeVisibility(e: Event) {
     await api.setVisibility(props.workspace, visibility);
     await reload();
     notice.value = visibility === "private"
-      ? "Base privée — seules les personnes invitées y accèdent."
+      ? "Private knowledge base — only invited people can access it."
       : visibility === "public"
-        ? "Base publique — accessible et cherchable par tout le monde (galerie publique + recherche), sans compte."
-        : `Base visible par tous les membres de ${access.value.orgName ?? "l'organisation"}.`;
+        ? "Public knowledge base — accessible and searchable by everyone (public gallery + search), without an account."
+        : `Knowledge base visible to all members of ${access.value.orgName ?? "the organization"}.`;
     emit("changed");
   } catch (e) { error.value = String(e instanceof Error ? e.message : e); }
 }
@@ -42,9 +42,9 @@ async function invite() {
   error.value = notice.value = inviteLink.value = null;
   try {
     const r = await api.grant(props.workspace, form.value.email.trim(), form.value.role);
-    if (r.emailSent) notice.value = `Invitation envoyée à ${r.email}`;
+    if (r.emailSent) notice.value = `Invitation sent to ${r.email}`;
     else if (r.provisioned && r.inviteLink) inviteLink.value = r.inviteLink;
-    else notice.value = `${r.email} a maintenant accès (${r.role === "curator" ? "écriture" : "lecture"})`;
+    else notice.value = `${r.email} now has access (${r.role === "curator" ? "write" : "read"})`;
     form.value.email = "";
     await reload();
     emit("changed");
@@ -60,14 +60,14 @@ async function changeRole(g: WorkspaceGrant, e: Event) {
 }
 
 async function revoke(g: WorkspaceGrant) {
-  if (!confirm(`Retirer l'accès de ${g.email ?? g.userId} à « ${props.workspace} » ?`)) return;
+  if (!confirm(`Remove access of ${g.email ?? g.userId} to "${props.workspace}"?`)) return;
   try { await api.revokeGrant(props.workspace, g.userId); await reload(); emit("changed"); }
   catch (e) { error.value = String(e instanceof Error ? e.message : e); }
 }
 
 async function copy(text: string, what: string) {
   try { await navigator.clipboard.writeText(text); copied.value = what; setTimeout(() => (copied.value = null), 1500); }
-  catch { /* copie manuelle */ }
+  catch { /* manual copy */ }
 }
 
 onMounted(reload);
@@ -76,36 +76,36 @@ onMounted(reload);
 <template>
   <div class="share">
     <p v-if="error" class="msg err">{{ error }}</p>
-    <p v-if="!access && !error" class="muted">Chargement…</p>
+    <p v-if="!access && !error" class="muted">Loading…</p>
     <template v-if="access">
       <div class="row">
-        <label>Qui peut accéder</label>
+        <label>Who can access</label>
         <select :value="access.visibility" @change="changeVisibility">
-          <option value="org">Tous les membres de {{ access.orgName ?? "l'organisation" }}</option>
-          <option value="private">Seulement les personnes invitées</option>
-          <option value="public">Public — tout le monde (galerie + recherche)</option>
+          <option value="org">All members of {{ access.orgName ?? "the organization" }}</option>
+          <option value="private">Only invited people</option>
+          <option value="public">Public — everyone (gallery + search)</option>
         </select>
       </div>
 
       <div v-if="access.visibility === 'public'" class="pubnote">
-        🌐 Publique — lisible et cherchable par tous, sans compte. Apparaît dans la
-        <a href="/public" target="_blank" rel="noopener">galerie publique</a>.
+        🌐 Public — readable and searchable by everyone, without an account. Appears in the
+        <a href="/public" target="_blank" rel="noopener">public gallery</a>.
       </div>
 
       <form class="inviteform" @submit.prevent="invite">
-        <input v-model="form.email" type="email" placeholder="Inviter par email (externe bienvenu)" required />
+        <input v-model="form.email" type="email" placeholder="Invite by email (externals welcome)" required />
         <select v-model="form.role">
-          <option value="member">lecture</option>
-          <option value="curator">écriture</option>
+          <option value="member">read</option>
+          <option value="curator">write</option>
         </select>
-        <button type="submit">Inviter</button>
+        <button type="submit">Invite</button>
       </form>
       <p v-if="notice" class="msg ok">{{ notice }}</p>
       <div v-if="inviteLink" class="linkbox">
-        <span>Compte créé — transmets ce lien (usage unique, évite les previews) :</span>
+        <span>Account created — share this link (single use, avoid previews):</span>
         <div class="linkrow">
           <input :value="inviteLink" readonly @focus="(e) => (e.target as HTMLInputElement).select()" />
-          <button @click="copy(inviteLink!, 'link')">{{ copied === "link" ? "✓" : "Copier" }}</button>
+          <button @click="copy(inviteLink!, 'link')">{{ copied === "link" ? "✓" : "Copy" }}</button>
         </div>
       </div>
 
@@ -113,20 +113,20 @@ onMounted(reload);
         <div v-for="g in access.grants" :key="g.userId" class="person">
           <span class="who">{{ g.email ?? g.userId }} <em v-if="g.pending">pending</em></span>
           <select :value="g.role" @change="changeRole(g, $event)" :disabled="!g.email">
-            <option value="member">lecture</option>
-            <option value="curator">écriture</option>
+            <option value="member">read</option>
+            <option value="curator">write</option>
           </select>
-          <button class="rm" @click="revoke(g)" title="Retirer l'accès">×</button>
+          <button class="rm" @click="revoke(g)" title="Remove access">×</button>
         </div>
         <div v-for="m in access.inherited" :key="`i-${m.userId}`" class="person inh">
           <span class="who">{{ m.email ?? m.userId }} <em v-if="m.pending">pending</em></span>
           <span class="via">{{ m.role }} · via {{ access.orgName ?? access.org }}</span>
         </div>
-        <p v-if="!access.grants.length && !access.inherited.length" class="muted small">Personne n'a accès — invite quelqu'un.</p>
+        <p v-if="!access.grants.length && !access.inherited.length" class="muted small">Nobody has access — invite someone.</p>
       </div>
 
       <button class="copyurl" @click="copy(baseUrl, 'url')">
-        {{ copied === "url" ? "✓ lien copié" : "Copier le lien de la base" }}
+        {{ copied === "url" ? "✓ link copied" : "Copy the knowledge base link" }}
       </button>
     </template>
   </div>

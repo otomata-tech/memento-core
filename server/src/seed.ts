@@ -1,9 +1,9 @@
 /**
- * Seed du workspace #1 `example-kb` : doctrine + 3 sections + 1 document avec
- * blocs typés + 1 source. Sert à tester le socle lecture de bout en bout via le
- * MCP stdio. Idempotent : ne fait rien si le workspace existe déjà.
+ * Seed for workspace #1 `example-kb`: doctrine + 3 sections + 1 document with
+ * typed blocks + 1 source. Used to test the read foundation end-to-end via the
+ * stdio MCP. Idempotent: does nothing if the workspace already exists.
  *
- * Lancer : npm run seed
+ * Run: npm run seed
  */
 import "dotenv/config";
 import { eq } from "drizzle-orm";
@@ -21,16 +21,16 @@ import {
 
 const PREAMBLE = `# Doctrine — Demo KB
 
-Base de connaissance de démonstration (méthodes de créativité). Le savoir y est découpé en **blocs typés** sourcés, pas en documents-fleuves.
+Demonstration knowledge base (creativity methods). Knowledge here is split into sourced **typed blocks**, not sprawling documents.
 
-## Quand utiliser quel type de bloc
-- **PRINCIPE** : une vérité directrice, durable. **REGLE** : une norme à appliquer. **EXCEPTION** : un cas où la règle ne tient pas.
-- **DEFINITION** : un terme cadré. **PROCEDURE** : une suite d'étapes. **EXEMPLE** : une illustration concrète.
-- **MISE_EN_GARDE** : un piège connu. **QUESTION** : un point ouvert non tranché.
-- **PROMPT_PORTEUR** / **PROMPT_SYSTEME** : fiches outil (prompt destiné au porteur / garde-fous du sous-agent).
+## When to use which block type
+- **PRINCIPE**: a guiding, durable truth. **REGLE**: a norm to apply. **EXCEPTION**: a case where the rule does not hold.
+- **DEFINITION**: a framed term. **PROCEDURE**: a sequence of steps. **EXEMPLE**: a concrete illustration.
+- **MISE_EN_GARDE**: a known pitfall. **QUESTION**: an open, unresolved point.
+- **PROMPT_PORTEUR** / **PROMPT_SYSTEME**: tool cards (prompt aimed at the owner / sub-agent guardrails).
 
-## Protocole
-Doctrine-first : partir de cette carte, cibler 2-3 sections, drill via mem_section/mem_document. Ne jamais tout charger. Un bloc porte UNE affirmation sourçable ; s'il en faut deux, le scinder. Écriture = boucle propose-valide (à venir).`;
+## Protocol
+Doctrine-first: start from this map, target 2-3 sections, drill via mem_section/mem_document. Never load everything. A block carries ONE sourceable claim; if it needs two, split it. Writing = propose-validate loop (upcoming).`;
 
 async function main(): Promise<void> {
   const existing = await db
@@ -39,7 +39,7 @@ async function main(): Promise<void> {
     .where(eq(workspaces.slug, "example-kb"))
     .limit(1);
   if (existing.length > 0) {
-    console.error("[seed] workspace 'example-kb' existe déjà — rien à faire.");
+    console.error("[seed] workspace 'example-kb' already exists — nothing to do.");
     await client.end();
     return;
   }
@@ -49,7 +49,7 @@ async function main(): Promise<void> {
     .values({
       slug: "example-kb",
       name: "Demo KB",
-      summary: "Base de démonstration — méthodes de créativité (blocs typés, sourcés).",
+      summary: "Demonstration base — creativity methods (typed, sourced blocks).",
     })
     .returning();
 
@@ -64,25 +64,25 @@ async function main(): Promise<void> {
     .values([
       {
         workspaceId: ws.id,
-        title: "Créativité",
+        title: "Creativity",
         slug: "creativite",
-        summary: "Méthodes et outils pour générer et trier des idées.",
+        summary: "Methods and tools to generate and sort ideas.",
         position: 0,
         depth: 0,
       },
       {
         workspaceId: ws.id,
-        title: "Stratégie chinoise",
+        title: "Chinese strategy",
         slug: "strategie-chinoise",
-        summary: "Penser l'efficacité par le potentiel de situation (shi), non par le plan.",
+        summary: "Think effectiveness through the potential of the situation (shi), not through the plan.",
         position: 1,
         depth: 0,
       },
       {
         workspaceId: ws.id,
-        title: "Éco-conception",
+        title: "Eco-design",
         slug: "eco-conception",
-        summary: "Concevoir en intégrant l'impact environnemental sur tout le cycle de vie.",
+        summary: "Design while factoring in environmental impact across the whole life cycle.",
         position: 2,
         depth: 0,
       },
@@ -95,9 +95,9 @@ async function main(): Promise<void> {
     .insert(documents)
     .values({
       sectionId: creativite.id,
-      title: "Boîte à outils de la créativité",
+      title: "Creativity toolbox",
       slug: "boite-a-outils-creativite",
-      summary: "Principes et procédés pour ouvrir puis refermer le champ des idées.",
+      summary: "Principles and methods to open then close the field of ideas.",
       kind: "outil",
       status: "ACTIVE",
     })
@@ -107,8 +107,8 @@ async function main(): Promise<void> {
     .insert(sources)
     .values({
       kind: "MANUAL",
-      title: "Boîte à outils de la créativité",
-      citation: "B. Groff, La Boîte à outils de la créativité, Dunod, 4e éd.",
+      title: "Creativity toolbox",
+      citation: "B. Groff, La Boîte à outils de la créativité, Dunod, 4th ed.",
     })
     .returning();
 
@@ -119,50 +119,50 @@ async function main(): Promise<void> {
         documentId: doc.id,
         type: "PRINCIPE",
         content:
-          "La créativité n'est pas un don réservé : c'est une discipline qui s'entraîne. Elle alterne deux temps distincts qu'il ne faut jamais mélanger : ouvrir (diverger) puis trier (converger).",
+          "Creativity is not a reserved gift: it is a discipline that can be trained. It alternates between two distinct phases that must never be mixed: opening up (diverging) then sorting (converging).",
         position: 0,
       },
       {
         documentId: doc.id,
         type: "DEFINITION",
         content:
-          "Divergence : produire un maximum d'idées sans jugement. Convergence : sélectionner et structurer selon des critères explicites. Juger pendant la divergence tue le flux.",
+          "Divergence: produce as many ideas as possible without judgment. Convergence: select and structure according to explicit criteria. Judging during divergence kills the flow.",
         position: 1,
       },
       {
         documentId: doc.id,
         type: "PROCEDURE",
         content:
-          "Brainwriting 6-3-5 : 6 participants écrivent 3 idées en 5 minutes, puis passent leur feuille au voisin qui rebondit. 6 tours → 108 idées en 30 minutes, sans prise de parole.",
+          "Brainwriting 6-3-5: 6 participants write 3 ideas in 5 minutes, then pass their sheet to their neighbor who builds on them. 6 rounds → 108 ideas in 30 minutes, with no one speaking.",
         position: 2,
       },
       {
         documentId: doc.id,
         type: "MISE_EN_GARDE",
         content:
-          "Le piège classique : enchaîner les techniques de divergence sans jamais converger. Sans critères de tri définis à l'avance, l'atelier produit du volume mais aucune décision.",
+          "The classic pitfall: chaining divergence techniques without ever converging. With no sorting criteria defined in advance, the workshop produces volume but no decision.",
         position: 3,
       },
       {
         documentId: doc.id,
         type: "PROMPT_PORTEUR",
         content:
-          "« Liste 20 usages de ton produit auxquels tu n'as jamais pensé. Interdiction de te censurer : note même les idées absurdes, on triera après. »",
+          "\"List 20 uses of your product you have never thought of. No self-censoring allowed: write down even the absurd ideas, we will sort them later.\"",
         position: 4,
       },
     ])
     .returning();
 
-  // Sourcing initial grossier : la source-mère sur le bloc PRINCIPE.
+  // Coarse initial sourcing: the parent source on the PRINCIPE block.
   const principe = blockRows.find((b) => b.type === "PRINCIPE")!;
   await db.insert(blockSources).values({
     blockId: principe.id,
     sourceId: src.id,
-    locator: "chap. 1",
+    locator: "ch. 1",
   });
 
   console.error(
-    `[seed] OK — workspace ${ws.slug}, ${sectionRows.length} sections, 1 document, ${blockRows.length} blocs.`,
+    `[seed] OK — workspace ${ws.slug}, ${sectionRows.length} sections, 1 document, ${blockRows.length} blocks.`,
   );
   await client.end();
 }

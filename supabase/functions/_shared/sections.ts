@@ -1,6 +1,6 @@
 /**
- * Lecture d'une section : déplie une zone (sous-sections + documents avec
- * compteurs et statut), jamais les blocs. Cf. spec §5.1 `mem_section`.
+ * Reading a section: unfolds a zone (subsections + documents with
+ * counts and status), never the blocks. See spec §5.1 `mem_section`.
  */
 import { count, eq, inArray } from "drizzle-orm";
 import { db, sections, documents, blocks } from "./db.ts";
@@ -8,7 +8,7 @@ import { resolveSectionByPath, type Section } from "./paths.ts";
 
 async function sectionById(id: string): Promise<Section> {
   const [row] = await db.select().from(sections).where(eq(sections.id, id)).limit(1);
-  if (!row) throw new Error(`Section introuvable: ${id}`);
+  if (!row) throw new Error(`Section not found: ${id}`);
   return row;
 }
 
@@ -68,6 +68,6 @@ export async function getSection(args: { id?: string; path?: string }) {
 }
 
 function requirePath(path?: string): string {
-  if (!path) throw new Error("`id` ou `path` requis");
+  if (!path) throw new Error("`id` or `path` required");
   return path;
 }

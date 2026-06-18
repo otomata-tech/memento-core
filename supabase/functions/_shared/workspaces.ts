@@ -1,7 +1,7 @@
 /**
- * Workspaces + doctrine. La doctrine est le point d'entrée doctrine-first :
- * carte compacte (préambule éditable + arbre de sections + conventions), jamais
- * le contenu des blocs. Cf. spec §5.1.
+ * Workspaces + doctrine. The doctrine is the doctrine-first entry point:
+ * compact map (editable preamble + section tree + conventions), never the
+ * block content. Cf. spec §5.1.
  */
 import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
@@ -27,7 +27,7 @@ export async function listWorkspaces(opts?: { ids?: string[] }) {
     summary: workspaces.summary,
     createdAt: workspaces.createdAt,
   };
-  // Les workspaces archivés sont masqués de la liste.
+  // Archived workspaces are hidden from the list.
   const notArchived = sql`${workspaces.archivedAt} is null`;
   const rows = opts?.ids
     ? await db.select(cols).from(workspaces).where(and(inArray(workspaces.id, opts.ids), notArchived))
@@ -36,8 +36,8 @@ export async function listWorkspaces(opts?: { ids?: string[] }) {
 }
 
 /**
- * Annuaire des KB publiques (galerie) : non archivées, périmètre `public`. Sans
- * auth — c'est la surface de découverte publique. Étiquetée par org (vitrine).
+ * Directory of public KBs (gallery): not archived, `public` scope. Without auth —
+ * it's the public discovery surface. Labeled by org (showcase).
  */
 export async function listPublicWorkspaces() {
   const rows = await db
@@ -65,7 +65,7 @@ export type SectionNode = {
   children: SectionNode[];
 };
 
-/** Arbre des sections d'un workspace avec compteurs directs (docs + blocs), sans contenu. */
+/** Section tree of a workspace with direct counts (docs + blocks), without content. */
 export async function buildSectionTree(workspaceId: string): Promise<SectionNode[]> {
   const rows = await db
     .select({

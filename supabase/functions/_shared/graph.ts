@@ -1,13 +1,13 @@
 /**
- * Traversée du graphe de liens (issue #17, partie 1) : `mem_neighborhood`.
+ * Link graph traversal (issue #17, part 1): `mem_neighborhood`.
  *
- * BFS itérative (une requête par niveau, `inArray` → IN (...) compatible pooler ;
- * le binding tableau `any(::text[])` casse sur Supavisor, cf. CLAUDE.md). Profondeur
- * plafonnée et nombre de nœuds borné : le serveur ne rend jamais de mur de texte —
- * les nœuds portent un extrait, l'agent fore avec mem_block.
+ * Iterative BFS (one query per level, `inArray` → IN (...) pooler-compatible;
+ * the array binding `any(::text[])` breaks on Supavisor, see CLAUDE.md). Depth
+ * capped and number of nodes bounded: the server never returns a wall of text —
+ * nodes carry an excerpt, the agent drills down with mem_block.
  *
- * Scoping : un MemLink relie toujours deux blocs du même workspace (invariant spec §4),
- * donc l'autorisation sur le bloc racine couvre tout le sous-graphe.
+ * Scoping: a MemLink always connects two blocks of the same workspace (spec §4 invariant),
+ * so authorization on the root block covers the whole subgraph.
  */
 import { eq, inArray, or, and, type SQL } from "drizzle-orm";
 import { db, blocks, documents, sections, links, linkRelation } from "./db.ts";
@@ -30,14 +30,14 @@ export async function neighborhood(args: NeighborhoodArgs) {
   const direction = args.direction ?? "both";
   const relations = args.relations?.filter((r) => RELATIONS.includes(r));
   if (args.relations && !relations?.length) {
-    throw new Error(`relations invalides (attendu: ${RELATIONS.join(", ")})`);
+    throw new Error(`invalid relations (expected: ${RELATIONS.join(", ")})`);
   }
 
   const [root] = await db.select({ id: blocks.id }).from(blocks)
     .where(eq(blocks.id, args.blockId)).limit(1);
-  if (!root) throw new Error(`Bloc introuvable: ${args.blockId}`);
+  if (!root) throw new Error(`Block not found: ${args.blockId}`);
 
-  // BFS niveau par niveau sur mem_links.
+  // Level-by-level BFS over mem_links.
   const seen = new Set<string>([args.blockId]);
   const nodeDepth = new Map<string, number>([[args.blockId, 0]]);
   const edges = new Map<string, { id: string; fromBlockId: string; toBlockId: string; relation: string; note: string | null }>();
@@ -71,7 +71,7 @@ export async function neighborhood(args: NeighborhoodArgs) {
     frontier = next;
   }
 
-  // Contexte des nœuds : bloc (extrait) + document + section.
+  // Node context: block (excerpt) + document + section.
   const nodeRows = await db.select({
     id: blocks.id, type: blocks.type, content: blocks.content,
     verifiedAt: blocks.verifiedAt,

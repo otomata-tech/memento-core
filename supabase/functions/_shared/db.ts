@@ -1,10 +1,10 @@
 /**
- * Connexion Deno (runtime prod Edge Functions). Le schéma est canonique dans
- * ../../../server/src/schema.ts (source unique partagée avec l'outillage Node) ;
- * l'import-map de deno.json résout `drizzle-orm/` pour tout le graphe, y compris
- * ce fichier hors du dossier functions.
+ * Deno connection (prod Edge Functions runtime). The schema is canonical in
+ * ../../../server/src/schema.ts (single source shared with the Node tooling);
+ * the deno.json import-map resolves `drizzle-orm/` for the whole graph, including
+ * this file outside the functions folder.
  *
- * Pooler Supavisor transaction (prepare:false) — isolates éphémères de l'Edge.
+ * Supavisor transaction pooler (prepare:false) — ephemeral Edge isolates.
  */
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -12,6 +12,6 @@ import postgres from "postgres";
 export * from "../../../server/src/schema.ts";
 
 const connectionString = Deno.env.get("DATABASE_URL");
-if (!connectionString) throw new Error("DATABASE_URL manquante");
+if (!connectionString) throw new Error("DATABASE_URL is missing");
 export const client = postgres(connectionString, { prepare: false });
 export const db = drizzle(client);

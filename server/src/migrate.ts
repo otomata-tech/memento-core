@@ -1,6 +1,6 @@
 /**
- * Runner de migrations Drizzle — non interactif (à la place de `db:push` qui exige
- * un TTY). Applique les migrations manquantes de drizzle/ d'après le journal.
+ * Drizzle migration runner — non-interactive (instead of `db:push` which requires
+ * a TTY). Applies the missing migrations from drizzle/ based on the journal.
  */
 import "dotenv/config";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -9,7 +9,7 @@ import postgres from "postgres";
 
 const url = process.env.DATABASE_URL;
 if (!url) {
-  console.error("[migrate] DATABASE_URL manquant");
+  console.error("[migrate] DATABASE_URL missing");
   process.exit(1);
 }
 
@@ -18,4 +18,4 @@ const db = drizzle(client);
 
 await migrate(db, { migrationsFolder: "./drizzle" });
 await client.end();
-console.error("[migrate] migrations appliquées");
+console.error("[migrate] migrations applied");

@@ -1,8 +1,8 @@
 /**
- * Helpers HTTP partagés entre functions (CORS + réponse JSON).
+ * HTTP helpers shared across functions (CORS + JSON response).
  *
- * Origines autorisées en cross-origin : pas de `*`, on ne reflète qu'une origine
- * connue. (La function `api` garde encore sa copie locale — convergence à terme.)
+ * Cross-origin allowed origins: no `*`, we only reflect a known origin.
+ * (The `api` function still keeps its local copy — convergence eventually.)
  */
 const ALLOWED_ORIGINS = new Set(
   [

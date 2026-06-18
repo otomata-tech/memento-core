@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * Connexion au viewer Memento (email/mot de passe via Supabase).
- * Garde d'accès : le routeur redirige ici quand il n'y a pas de session.
+ * Sign-in to the Memento viewer (email/password via Supabase).
+ * Access guard: the router redirects here when there is no session.
  */
 import { onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -14,8 +14,8 @@ const password = ref("");
 const busy = ref(false);
 const sent = ref(false);
 const error = ref("");
-// Auto-connect : une session vivante existe déjà → pas de formulaire, on entre.
-// (Sinon : re-login réflexe à chaque arrivée sur /login, sessions abandonnées en série.)
+// Auto-connect: a live session already exists → no form, go straight in.
+// (Otherwise: reflexive re-login on every arrival at /login, abandoned sessions in series.)
 const checking = ref(true);
 onMounted(async () => {
   const { data: { session } } = await supabase.auth.getSession();
@@ -25,7 +25,7 @@ onMounted(async () => {
 
 function dest() {
   const r = route.query.redirect;
-  // chemin relatif same-origin uniquement ("//host" = protocol-relative → externe)
+  // same-origin relative path only ("//host" = protocol-relative → external)
   return typeof r === "string" && r.startsWith("/") && !r.startsWith("//") ? r : "/";
 }
 
@@ -48,7 +48,7 @@ async function signInOtp() {
 async function signInGoogle() {
   error.value = "";
   const e = await signInWithGoogle(`${window.location.origin}/callback`);
-  if (e) error.value = e; // sinon redirection vers Google
+  if (e) error.value = e; // otherwise redirect to Google
 }
 </script>
 
@@ -56,23 +56,23 @@ async function signInGoogle() {
   <div class="login-wrap">
     <div class="login-card" v-if="!checking">
       <div class="brand">Memento</div>
-      <h1 class="title">Connexion</h1>
-      <p v-if="sent" class="muted">Lien envoyé à {{ email }} — clique-le pour te connecter.</p>
+      <h1 class="title">Sign in</h1>
+      <p v-if="sent" class="muted">Link sent to {{ email }} — click it to sign in.</p>
       <template v-else>
-        <p class="muted">Connecte-toi pour consulter la base de connaissance.</p>
-        <button type="button" class="google" @click="signInGoogle">Continuer avec Google</button>
-        <div class="sep"><span>ou</span></div>
+        <p class="muted">Sign in to browse the knowledge base.</p>
+        <button type="button" class="google" @click="signInGoogle">Continue with Google</button>
+        <div class="sep"><span>or</span></div>
         <form @submit.prevent="signInPassword">
-          <input v-model="email" type="email" placeholder="ton.email@…" required class="field" />
-          <input v-model="password" type="password" placeholder="mot de passe" required class="field" />
+          <input v-model="email" type="email" placeholder="your.email@…" required class="field" />
+          <input v-model="password" type="password" placeholder="password" required class="field" />
           <div class="actions">
-            <button type="submit" :disabled="busy">{{ busy ? "…" : "Se connecter" }}</button>
-            <button type="button" class="ghost" @click="signInOtp">Lien par email</button>
+            <button type="submit" :disabled="busy">{{ busy ? "…" : "Sign in" }}</button>
+            <button type="button" class="ghost" @click="signInOtp">Email link</button>
           </div>
         </form>
         <p v-if="error" class="muted err">{{ error }}</p>
       </template>
-      <p class="pubentry"><router-link to="/public">Explorer les bases publiques →</router-link></p>
+      <p class="pubentry"><router-link to="/public">Explore public bases →</router-link></p>
     </div>
   </div>
 </template>

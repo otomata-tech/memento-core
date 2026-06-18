@@ -1,9 +1,9 @@
 /**
- * Memento REST — Supabase Edge Function (Deno). Miroir des verbes `mem_*` au-dessus
- * de la couche services partagée (`../_shared/`), pour le serveur-à-serveur et le
- * viewer. Mêmes query params que la surface MCP (id | path, workspace, q...).
+ * Memento REST — Supabase Edge Function (Deno). Mirror of the `mem_*` verbs on top
+ * of the shared services layer (`../_shared/`), for server-to-server and the
+ * viewer. Same query params as the MCP surface (id | path, workspace, q...).
  *
- * Déployé, la function "api" répond sur /api/*. En local : deno run -A .../api/index.ts
+ * Once deployed, the "api" function answers on /api/*. Locally: deno run -A .../api/index.ts
  */
 import { listWorkspaces, listPublicWorkspaces, getDoctrine } from "../_shared/workspaces.ts";
 import { getSection } from "../_shared/sections.ts";
@@ -25,9 +25,9 @@ import { authenticate } from "../_shared/auth.ts";
 import { assertAccess, assertWorkspaceAdmin, accessibleWorkspaceIds, AccessError, safeErrorMessage } from "../_shared/access.ts";
 import { assertWithinLimit, RateLimitError } from "../_shared/ratelimit.ts";
 
-/** Origines autorisées à appeler l'API en cross-origin (le viewer passe par un
- *  proxy same-origin et n'en a pas besoin). Pas de `*` : on ne reflète qu'une
- *  origine connue. */
+/** Origins allowed to call the API cross-origin (the viewer goes through a
+ *  same-origin proxy and doesn't need it). No `*`: we only reflect a known
+ *  origin. */
 const ALLOWED_ORIGINS = new Set(
   [
     Deno.env.get("MEMENTO_APP_URL"),
@@ -60,22 +60,22 @@ function jsonRes(data: unknown, status = 200, cors: Record<string, string> = {})
   });
 }
 
-/** Routes réservées aux comptes connectés même sur une KB publique : la couche
- *  éditoriale/audit (journal de révisions, file d'ingestions) porte l'identité des
- *  contributeurs — pas une donnée publique. La lecture de contenu, elle, est ouverte. */
+/** Routes reserved for logged-in accounts even on a public KB: the
+ *  editorial/audit layer (revision log, ingestion queue) carries the identity of
+ *  contributors — not public data. Reading content, on the other hand, is open. */
 function requireAuthenticated(sub: string): void {
-  if (!sub) throw new AccessError("ressource introuvable ou accès refusé");
+  if (!sub) throw new AccessError("resource not found or access denied");
 }
 
 async function route(path: string, q: URLSearchParams, sub: string): Promise<unknown> {
   const id = q.get("id") ?? undefined;
   const p = q.get("path") ?? undefined;
   switch (path) {
-    // ── Surface PUBLIQUE (sans auth) : galerie + recherche des KB publiques ──
+    // ── PUBLIC surface (no auth): gallery + search of public KBs ──
     case "/public/workspaces":
       return listPublicWorkspaces();
     case "/public/search":
-      await assertWithinLimit(sub, "search_public"); // anonyme (sub="") = no-op, borné WAF
+      await assertWithinLimit(sub, "search_public"); // anonymous (sub="") = no-op, bounded by WAF
       return searchPublic({
         q: q.get("q") ?? "",
         blockType: q.get("blockType") ?? undefined,
@@ -83,8 +83,8 @@ async function route(path: string, q: URLSearchParams, sub: string): Promise<unk
         maxHits: q.get("maxHits") ? Number(q.get("maxHits")) : undefined,
       });
     case "/workspaces":
-      // Onboarding : un compte loggé sans KB s'en voit créer une (org perso, privée).
-      await ensureDefaultWorkspace(sub); // anonyme (sub="") = no-op
+      // Onboarding: a logged-in account with no KB gets one created (personal org, private).
+      await ensureDefaultWorkspace(sub); // anonymous (sub="") = no-op
       return listWorkspaces({ ids: await accessibleWorkspaceIds(sub) });
     case "/prefs":
       return { defaultWorkspace: (await getDefaultWorkspace(sub))?.slug ?? null };
@@ -94,10 +94,10 @@ async function route(path: string, q: URLSearchParams, sub: string): Promise<unk
     case "/admin/orgs":
       return listMyOrgs(sub);
     case "/admin/accounts":
-      // Gating dans listAccounts : opérateurs plateforme (MEMENTO_PLATFORM_ADMINS).
+      // Gating in listAccounts: platform operators (MEMENTO_PLATFORM_ADMINS).
       return listAccounts(sub);
     case "/workspace/grants":
-      // Gating dans listGrants : admin effectif de la base.
+      // Gating in listGrants: effective admin of the base.
       return listGrants(sub, { workspace: q.get("workspace")! });
     case "/doctrine":
       await assertAccess(sub, { workspace: q.get("workspace")! });
@@ -140,7 +140,7 @@ async function route(path: string, q: URLSearchParams, sub: string): Promise<unk
       await assertAccess(sub, { id: q.get("id")!, kind: "ingestion" });
       return getIngestion(q.get("id")!);
     case "/usage-logs":
-      // Scoping dans listUsageLogs : mes logs, ou ceux d'une KB si admin/curator.
+      // Scoping in listUsageLogs: my logs, or a KB's logs if admin/curator.
       return listUsageLogs({
         workspace: q.get("workspace") ?? undefined,
         verb: q.get("verb") ?? undefined,
@@ -151,7 +151,7 @@ async function route(path: string, q: URLSearchParams, sub: string): Promise<unk
   }
 }
 
-/** Routes mutantes (admin + préférences) — POST/DELETE avec body JSON. */
+/** Mutating routes (admin + preferences) — POST/DELETE with JSON body. */
 async function mutationRoute(method: string, path: string, body: any, sub: string): Promise<unknown> {
   switch (`${method} ${path}`) {
     case "POST /admin/invite": return inviteMember(sub, body);
@@ -168,7 +168,7 @@ async function mutationRoute(method: string, path: string, body: any, sub: strin
     }
     case "POST /prefs/pin":
       requireAuthenticated(sub);
-      return pinWorkspace(sub, body.workspace); // assertAccess (lecture) dans la fn
+      return pinWorkspace(sub, body.workspace); // assertAccess (read) inside the fn
     case "DELETE /prefs/pin":
       requireAuthenticated(sub);
       return unpinWorkspace(sub, body.workspace);
@@ -181,11 +181,11 @@ async function mutationRoute(method: string, path: string, body: any, sub: strin
     case "POST /workspace/archive":
       await assertWorkspaceAdmin(sub, body.workspace);
       return archiveWorkspace(body, sub);
-    // ── Périmètre par KB (gating admin effectif dans les services, issue #60) ──
+    // ── Per-KB scope (effective admin gating in the services, issue #60) ──
     case "POST /workspace/grants": return grantAccess(sub, body);
     case "DELETE /workspace/grants": return revokeGrant(sub, body);
     case "POST /workspace/visibility": return setVisibility(sub, body);
-    // ── Écriture curée (réservée admin/curator, gated par assertAccess write) ──
+    // ── Curated writes (admin/curator only, gated by assertAccess write) ──
     case "POST /block/verify":
       await assertAccess(sub, { id: body.id, kind: "block" }, { write: true });
       return verifyBlock(body, sub);
@@ -208,7 +208,7 @@ async function mutationRoute(method: string, path: string, body: any, sub: strin
       await assertAccess(sub, { id: body.id, kind: "ingestion" }, { write: true });
       return requestChanges(body, sub);
     case "POST /usage-log":
-      // Feedback produit : ouvert à tout user authentifié, aucun rôle requis.
+      // Product feedback: open to any authenticated user, no role required.
       return logUsage(body, sub);
     default: return null;
   }
@@ -218,20 +218,20 @@ Deno.serve({ port: Number(Deno.env.get("PORT") ?? 8000) }, async (req) => {
   const cors = corsHeaders(req.headers.get("origin"));
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
   const url = new URL(req.url);
-  // Retire le préfixe de routage de la function (/api) s'il est présent.
+  // Strip the function's routing prefix (/api) if present.
   const path = url.pathname.replace(/^\/api/, "") || "/";
   if (path === "/health") return new Response("ok", { headers: cors });
-  // Fédération oto→memento (otomata#16) : un compte créé sur oto demande la création
-  // du compte memento correspondant (jointure par email). Authentifié par le SECRET
-  // DE SERVICE partagé (MEMENTO_PROVISION_BEARER), PAS par l'OAuth user — avant
-  // authenticate(). memento reste propriétaire de la création (ensureAccount).
+  // oto→memento federation (otomata#16): an account created on oto requests the creation
+  // of the matching memento account (joined by email). Authenticated by the shared
+  // SERVICE SECRET (MEMENTO_PROVISION_BEARER), NOT by the user's OAuth — before
+  // authenticate(). memento stays the owner of the creation (ensureAccount).
   if (path === "/federation/provision" && req.method === "POST") {
     const secret = Deno.env.get("MEMENTO_PROVISION_BEARER");
     const got = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
     if (!secret || got !== secret) return jsonRes({ error: "forbidden" }, 403, cors);
     const body = await req.json().catch(() => ({})) as { email?: string };
     const email = (body.email ?? "").trim();
-    if (!email) return jsonRes({ error: "email requis" }, 400, cors);
+    if (!email) return jsonRes({ error: "email required" }, 400, cors);
     try {
       const r = await ensureAccount(email);
       return jsonRes({ ok: true, provisioned: r.provisioned, sub: r.sub }, 200, cors);
@@ -240,9 +240,9 @@ Deno.serve({ port: Number(Deno.env.get("PORT") ?? 8000) }, async (req) => {
       return jsonRes({ error: safeErrorMessage(e) }, 500, cors);
     }
   }
-  // Lecture anonyme autorisée (GET) : sans token, on poursuit en sub="" et chaque
-  // route reste gardée par assertAccess → seul le périmètre `public` passe (réponse
-  // indistincte d'un refus sinon). Les mutations exigent toujours un token valide.
+  // Anonymous read allowed (GET): without a token, we continue with sub="" and each
+  // route stays guarded by assertAccess → only the `public` scope passes (response
+  // indistinguishable from a denial otherwise). Mutations always require a valid token.
   const auth = await authenticate(req);
   if (!auth.ok && req.method !== "GET") return jsonRes({ error: auth.message }, auth.status, cors);
   const sub = auth.ok ? (auth.claims.sub ?? "") : "";
@@ -250,7 +250,7 @@ Deno.serve({ port: Number(Deno.env.get("PORT") ?? 8000) }, async (req) => {
     const data = req.method === "GET"
       ? await route(path, url.searchParams, sub)
       : await mutationRoute(req.method, path, await req.json().catch(() => ({})), sub);
-    if (data === null) return jsonRes({ error: `route inconnue: ${path}` }, 404, cors);
+    if (data === null) return jsonRes({ error: `unknown route: ${path}` }, 404, cors);
     return jsonRes(data, 200, cors);
   } catch (e) {
     if (e instanceof AccessError) return jsonRes({ error: e.message }, 403, cors);

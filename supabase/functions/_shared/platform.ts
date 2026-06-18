@@ -1,10 +1,10 @@
 /**
- * Vue plateforme — l'inventaire des COMPTES (auth.users), au-delà du scoping par org.
- * Le signup Google est ouvert : des comptes peuvent exister sans appartenir à aucune
- * org (invisibles dans /org/:slug/membres). Cette vue les rend visibles.
+ * Platform view — the inventory of ACCOUNTS (auth.users), beyond per-org scoping.
+ * Google signup is open: accounts can exist without belonging to any org (invisible
+ * in /org/:slug/membres). This view makes them visible.
  *
- * Gating : opérateurs plateforme déclarés dans MEMENTO_PLATFORM_ADMINS
- * (emails séparés par des virgules) — un rôle hors du modèle org, volontairement.
+ * Gating: platform operators declared in MEMENTO_PLATFORM_ADMINS (comma-separated
+ * emails) — a role outside the org model, deliberately.
  */
 import { sql } from "drizzle-orm";
 import { db } from "./db.ts";
@@ -13,17 +13,17 @@ import { AccessError } from "./access.ts";
 async function assertPlatformAdmin(sub: string): Promise<void> {
   const raw = Deno.env.get("MEMENTO_PLATFORM_ADMINS") ?? "";
   const admins = raw.split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
-  if (!admins.length) throw new AccessError("MEMENTO_PLATFORM_ADMINS non configuré");
+  if (!admins.length) throw new AccessError("MEMENTO_PLATFORM_ADMINS not configured");
   const rows = await db.execute<{ email: string }>(
     sql`select email from auth.users where id::text = ${sub} limit 1`,
   );
   const email = rows[0]?.email?.toLowerCase();
   if (!email || !admins.includes(email)) {
-    throw new AccessError("réservé aux opérateurs plateforme");
+    throw new AccessError("restricted to platform operators");
   }
 }
 
-/** Tous les comptes + leurs appartenances (ou aucune). Tri : plus récent d'abord. */
+/** All accounts + their memberships (or none). Sort: most recent first. */
 export async function listAccounts(sub: string) {
   await assertPlatformAdmin(sub);
   const rows = await db.execute<{
@@ -47,7 +47,7 @@ export async function listAccounts(sub: string) {
       provider: r.provider,
       createdAt: r.created_at,
       lastSignInAt: r.last_sign_in_at,
-      // null = compte sans aucune org : il ne voit aucune KB, mais il existe.
+      // null = account with no org: it sees no KB, but it exists.
       orgs: r.orgs,
     })),
   };

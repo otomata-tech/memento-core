@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// Page d'une organisation — onglets Bases / Membres / Réglages (/org/:org/:tab).
-// Tout l'état vient de l'URL (deep-link) ; l'org se switche depuis la barre (AppShell).
+// Organization page — Bases / Members / Settings tabs (/org/:org/:tab).
+// All state comes from the URL (deep-link); the org is switched from the bar (AppShell).
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, type AdminOrg } from "../api";
@@ -19,25 +19,25 @@ const copied = ref(false);
 
 const memberForm = ref({ email: "", role: "member" });
 const wsForm = ref({ name: "", summary: "" });
-// Panneau « Partager » par base (issue #60) — composant SharePanel, ouvert au clic.
+// "Share" panel per base (issue #60) — SharePanel component, opened on click.
 const accessOpen = ref<string | null>(null);
-// Cible de transfert par base (slug → org de destination choisie dans le select).
+// Transfer target per base (slug → destination org chosen in the select).
 const moveTo = ref<Record<string, string>>({});
 
 const slug = computed(() => String(route.params.org ?? ""));
 const tab = computed(() => String(route.params.tab ?? "bases"));
 const org = computed<AdminOrg | null>(() => orgs.value.find((o) => o.slug === slug.value) ?? null);
 const isAdmin = computed(() => org.value?.myRole === "admin");
-/** Orgs de destination possibles pour un transfert (admin des deux côtés). */
+/** Possible destination orgs for a transfer (admin on both sides). */
 const moveTargets = computed(() => orgs.value.filter((o) => o.myRole === "admin" && o.slug !== slug.value));
-/** Base de référence pour la nav du shell : une base de CETTE org. */
+/** Reference base for the shell nav: a base of THIS org. */
 const shellWs = computed(() => org.value?.workspaces[0]?.slug ?? "");
 
 async function load() {
   loading.value = true; error.value = null;
   try {
     orgs.value = (await api.admin.orgs()).orgs;
-    if (slug.value && !org.value) error.value = `Organisation « ${slug.value} » introuvable (ou tu n'en es pas membre).`;
+    if (slug.value && !org.value) error.value = `Organization "${slug.value}" not found (or you are not a member).`;
   } catch (e) { error.value = String(e instanceof Error ? e.message : e); }
   finally { loading.value = false; }
 }
@@ -50,7 +50,7 @@ async function addMember() {
   invite.value = null;
   try {
     const r = await api.admin.invite(org.value.slug, memberForm.value.email.trim(), memberForm.value.role);
-    if (r.emailSent) flash(`Invitation envoyée par email à ${r.email} (${r.role})`);
+    if (r.emailSent) flash(`Invitation emailed to ${r.email} (${r.role})`);
     else if (r.provisioned && r.inviteLink) invite.value = { email: r.email, link: r.inviteLink };
     else flash(`${r.email} → ${org.value.name} (${r.role})`);
     memberForm.value.email = "";
@@ -60,7 +60,7 @@ async function addMember() {
 
 async function resendInvite(m: { email: string | null }) {
   if (!org.value || !m.email) return;
-  try { await api.admin.resendInvite(org.value.slug, m.email); flash(`Email de connexion renvoyé à ${m.email}`); }
+  try { await api.admin.resendInvite(org.value.slug, m.email); flash(`Sign-in email resent to ${m.email}`); }
   catch (e) { fail(e); }
 }
 
@@ -72,8 +72,8 @@ async function showInviteLink(m: { email: string | null }) {
 
 async function removeMember(m: { userId: string; email: string | null }) {
   if (!org.value) return;
-  if (!confirm(`Retirer ${m.email ?? m.userId} de ${org.value.name} ?`)) return;
-  try { await api.admin.removeMember(org.value.slug, m.userId); flash(`${m.email ?? m.userId} retiré`); await load(); }
+  if (!confirm(`Remove ${m.email ?? m.userId} from ${org.value.name}?`)) return;
+  try { await api.admin.removeMember(org.value.slug, m.userId); flash(`${m.email ?? m.userId} removed`); await load(); }
   catch (e) { fail(e); }
 }
 
@@ -81,7 +81,7 @@ async function createWorkspace() {
   if (!org.value || !wsForm.value.name.trim()) return;
   try {
     const w = await api.admin.createWorkspace(org.value.slug, wsForm.value.name.trim(), wsForm.value.summary.trim());
-    flash(`Base « ${w.name} » créée (${w.slug})`);
+    flash(`Base "${w.name}" created (${w.slug})`);
     wsForm.value = { name: "", summary: "" };
     await load();
   } catch (e) { fail(e); }
@@ -92,18 +92,18 @@ function toggleAccess(wsSlug: string) {
 }
 
 async function archiveWorkspace(wsSlug: string) {
-  if (!confirm(`Archiver la base « ${wsSlug} » ? Elle sera masquée (réversible).`)) return;
-  try { await api.archiveWorkspace(wsSlug, true); flash(`Base « ${wsSlug} » archivée`); await load(); }
+  if (!confirm(`Archive base "${wsSlug}"? It will be hidden (reversible).`)) return;
+  try { await api.archiveWorkspace(wsSlug, true); flash(`Base "${wsSlug}" archived`); await load(); }
   catch (e) { fail(e); }
 }
 
 async function transferWorkspace(wsSlug: string) {
   const dest = moveTo.value[wsSlug];
   if (!org.value || !dest) return;
-  if (!confirm(`Déplacer « ${wsSlug} » vers ${dest} ? Les membres de ${org.value.name} perdront l'accès.`)) return;
+  if (!confirm(`Move "${wsSlug}" to ${dest}? Members of ${org.value.name} will lose access.`)) return;
   try {
     const r = await api.admin.transferWorkspace(dest, wsSlug);
-    flash(`Base « ${r.workspace} » transférée vers ${r.toOrg}`);
+    flash(`Base "${r.workspace}" transferred to ${r.toOrg}`);
     delete moveTo.value[wsSlug];
     await load();
   } catch (e) { fail(e); }
@@ -111,7 +111,7 @@ async function transferWorkspace(wsSlug: string) {
 
 async function deleteOrg() {
   if (!org.value) return;
-  if (!confirm(`Supprimer l'organisation vide « ${org.value.name} » ?`)) return;
+  if (!confirm(`Delete the empty organization "${org.value.name}"?`)) return;
   try {
     await api.admin.deleteOrg(org.value.slug);
     const next = orgs.value.find((o) => o.slug !== slug.value);
@@ -122,7 +122,7 @@ async function deleteOrg() {
 async function copyLink() {
   if (!invite.value) return;
   try { await navigator.clipboard.writeText(invite.value.link); copied.value = true; setTimeout(() => (copied.value = false), 1500); }
-  catch { /* clipboard indispo : copie manuelle */ }
+  catch { /* clipboard unavailable: manual copy */ }
 }
 
 watch(() => route.params.org, () => { notice.value = null; invite.value = null; });
@@ -140,17 +140,17 @@ load();
 
       <div v-if="invite" class="invite">
         <div class="invite-head">
-          Compte créé pour <strong>{{ invite.email }}</strong> — transmets-lui ce lien (valable une fois) :
-          <button class="close" @click="invite = null" title="Fermer">×</button>
+          Account created for <strong>{{ invite.email }}</strong> — send them this link (valid once):
+          <button class="close" @click="invite = null" title="Close">×</button>
         </div>
         <div class="invite-link">
           <input :value="invite.link" readonly @focus="(e) => (e.target as HTMLInputElement).select()" />
-          <button @click="copyLink">{{ copied ? "✓ copié" : "Copier" }}</button>
+          <button @click="copyLink">{{ copied ? "✓ copied" : "Copy" }}</button>
         </div>
-        <p class="muted small">Lien à usage unique — les aperçus de liens (WhatsApp, Slack…) peuvent le consommer. Préfère l'email quand c'est possible.</p>
+        <p class="muted small">Single-use link — link previews (WhatsApp, Slack…) can consume it. Prefer email when possible.</p>
       </div>
 
-      <p v-if="loading" class="muted">Chargement…</p>
+      <p v-if="loading" class="muted">Loading…</p>
 
       <template v-if="!loading && org">
         <header class="org-head">
@@ -160,8 +160,8 @@ load();
 
         <nav class="tabs">
           <router-link :to="`/org/${org.slug}/bases`" :class="{ on: tab === 'bases' }">Bases</router-link>
-          <router-link :to="`/org/${org.slug}/membres`" :class="{ on: tab === 'membres' }">Membres</router-link>
-          <router-link :to="`/org/${org.slug}/reglages`" :class="{ on: tab === 'reglages' }">Réglages</router-link>
+          <router-link :to="`/org/${org.slug}/membres`" :class="{ on: tab === 'membres' }">Members</router-link>
+          <router-link :to="`/org/${org.slug}/reglages`" :class="{ on: tab === 'reglages' }">Settings</router-link>
         </nav>
 
         <!-- ── Bases ─────────────────────────────────────────────────────── -->
@@ -174,22 +174,22 @@ load();
                 <td>
                   <router-link :to="`/w/${w.slug}`"><b>{{ w.name }}</b></router-link>
                   <span class="slug">{{ w.slug }}</span>
-                  <span v-if="w.visibility === 'private'" class="vis-badge" title="Accès par invitations seules">🔒 privée</span>
-                  <span v-else-if="w.visibility === 'public'" class="vis-badge" title="Lisible et cherchable par tous, sans compte">🌐 publique</span>
+                  <span v-if="w.visibility === 'private'" class="vis-badge" title="Access by invitation only">🔒 private</span>
+                  <span v-else-if="w.visibility === 'public'" class="vis-badge" title="Readable and searchable by everyone, no account needed">🌐 public</span>
                 </td>
                 <td class="right">
-                  <button v-if="isAdmin" class="link-action" @click="toggleAccess(w.slug)">{{ accessOpen === w.slug ? "fermer" : "partager" }}</button>
-                  <router-link :to="`/w/${w.slug}`" class="link-action">ouvrir</router-link>
+                  <button v-if="isAdmin" class="link-action" @click="toggleAccess(w.slug)">{{ accessOpen === w.slug ? "close" : "share" }}</button>
+                  <router-link :to="`/w/${w.slug}`" class="link-action">open</router-link>
                 </td>
                 <td v-if="isAdmin" class="right actions">
                   <template v-if="moveTargets.length">
                     <select v-model="moveTo[w.slug]" class="mini">
-                      <option disabled value="">déplacer vers…</option>
+                      <option disabled value="">move to…</option>
                       <option v-for="t in moveTargets" :key="t.slug" :value="t.slug">{{ t.name }}</option>
                     </select>
-                    <button v-if="moveTo[w.slug]" class="link-action" @click="transferWorkspace(w.slug)">⇄ déplacer</button>
+                    <button v-if="moveTo[w.slug]" class="link-action" @click="transferWorkspace(w.slug)">⇄ move</button>
                   </template>
-                  <button class="link-danger" @click="archiveWorkspace(w.slug)">archiver</button>
+                  <button class="link-danger" @click="archiveWorkspace(w.slug)">archive</button>
                 </td>
               </tr>
               <tr v-if="accessOpen === w.slug">
@@ -200,31 +200,31 @@ load();
               </template>
             </tbody>
           </table>
-          <p v-else class="muted">Aucune base dans cette organisation.</p>
+          <p v-else class="muted">No base in this organization.</p>
 
           <form v-if="isAdmin" class="add" @submit.prevent="createWorkspace">
-            <input v-model="wsForm.name" type="text" placeholder="Nom de la nouvelle base" required />
-            <input v-model="wsForm.summary" type="text" placeholder="Résumé (optionnel)" />
-            <button type="submit">Créer une base</button>
+            <input v-model="wsForm.name" type="text" placeholder="Name of the new base" required />
+            <input v-model="wsForm.summary" type="text" placeholder="Summary (optional)" />
+            <button type="submit">Create a base</button>
           </form>
         </section>
 
-        <!-- ── Membres ───────────────────────────────────────────────────── -->
+        <!-- ── Members ───────────────────────────────────────────────────── -->
         <section v-if="tab === 'membres'" class="card">
           <table class="members">
-            <thead><tr><th>Membre</th><th>Rôle</th><th></th></tr></thead>
+            <thead><tr><th>Member</th><th>Role</th><th></th></tr></thead>
             <tbody>
               <tr v-for="m in org.members" :key="m.userId">
                 <td>
                   {{ m.email ?? m.userId.slice(0, 12) + "…" }}
-                  <span v-if="m.pending" class="badge pending" title="Compte jamais connecté">en attente</span>
+                  <span v-if="m.pending" class="badge pending" title="Account never signed in">pending</span>
                 </td>
                 <td><span class="badge" :class="m.role">{{ m.role }}</span></td>
                 <td class="right">
                   <template v-if="isAdmin">
-                    <button v-if="m.pending" class="link-action" title="Renvoyer l'email d'invitation" @click="resendInvite(m)">renvoyer</button>
-                    <button v-if="m.pending" class="link-action" title="Lien à transmettre à la main" @click="showInviteLink(m)">lien</button>
-                    <button class="link-danger" @click="removeMember(m)">retirer</button>
+                    <button v-if="m.pending" class="link-action" title="Resend the invitation email" @click="resendInvite(m)">resend</button>
+                    <button v-if="m.pending" class="link-action" title="Link to share by hand" @click="showInviteLink(m)">link</button>
+                    <button class="link-danger" @click="removeMember(m)">remove</button>
                   </template>
                 </td>
               </tr>
@@ -234,28 +234,28 @@ load();
           <form v-if="isAdmin" class="add" @submit.prevent="addMember">
             <input v-model="memberForm.email" type="email" placeholder="email@exemple.com" required />
             <select v-model="memberForm.role">
-              <option value="member">member (lecture)</option>
-              <option value="curator">curator (écriture)</option>
+              <option value="member">member (read)</option>
+              <option value="curator">curator (write)</option>
               <option value="admin">admin</option>
             </select>
-            <button type="submit">Inviter / mettre à jour</button>
+            <button type="submit">Invite / update</button>
           </form>
-          <p v-else class="muted small">Lecture seule — réservé aux admins de l'org.</p>
+          <p v-else class="muted small">Read-only — restricted to org admins.</p>
         </section>
 
-        <!-- ── Réglages ──────────────────────────────────────────────────── -->
+        <!-- ── Settings ──────────────────────────────────────────────────── -->
         <section v-if="tab === 'reglages'" class="card">
           <dl class="meta">
-            <dt>Nom</dt><dd>{{ org.name }}</dd>
+            <dt>Name</dt><dd>{{ org.name }}</dd>
             <dt>Slug</dt><dd class="slug">{{ org.slug }}</dd>
-            <dt>Mon rôle</dt><dd><span class="badge" :class="org.myRole ?? ''">{{ org.myRole }}</span></dd>
-            <dt>Périmètre</dt><dd class="muted">Une org = un périmètre de partage (mission, client, perso). Les membres voient toutes ses bases.</dd>
+            <dt>My role</dt><dd><span class="badge" :class="org.myRole ?? ''">{{ org.myRole }}</span></dd>
+            <dt>Scope</dt><dd class="muted">An org = a sharing scope (mission, client, personal). Members see all its bases.</dd>
           </dl>
           <div v-if="isAdmin" class="danger-zone">
             <template v-if="!org.workspaces.length && org.members.length <= 1">
-              <button class="link-danger" @click="deleteOrg">Supprimer cette organisation (vide)</button>
+              <button class="link-danger" @click="deleteOrg">Delete this organization (empty)</button>
             </template>
-            <p v-else class="muted small">Suppression possible uniquement quand l'org n'a plus ni base ni autre membre.</p>
+            <p v-else class="muted small">Deletion is only possible once the org has no base and no other member.</p>
           </div>
         </section>
       </template>
@@ -265,7 +265,7 @@ load();
 </template>
 
 <style scoped>
-/* Éditorial : pas de radius. Vit dans AppShell (.ed). */
+/* Editorial: no radius. Lives in AppShell (.ed). */
 .content { padding: 24px; max-width: 760px; width: 100%; margin: 0 auto; }
 .org-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
 .org-head h1 { font-family: var(--font-display); font-size: 22px; margin: 0; }

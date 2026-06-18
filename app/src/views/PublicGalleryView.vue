@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// Galerie publique : annuaire + recherche plein-texte des KB publiques. Aucune
-// authentification — surface de découverte ouverte (cf. mem_set_visibility public).
+// Public gallery: directory + full-text search of public KBs. No
+// authentication — open discovery surface (cf. mem_set_visibility public).
 import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { api, type PublicWorkspace, type PublicSearchHit } from "../api";
@@ -11,7 +11,7 @@ const list = ref<PublicWorkspace[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const authed = ref(false);
-const pinnedSlugs = ref<Set<string>>(new Set()); // KB épinglées (pour l'état du bouton 📌)
+const pinnedSlugs = ref<Set<string>>(new Set()); // pinned KBs (for the 📌 button state)
 
 const q = ref("");
 const searching = ref(false);
@@ -22,7 +22,7 @@ onMounted(async () => {
   authed.value = !!(await supabase.auth.getSession()).data.session;
   try {
     const tasks: Promise<unknown>[] = [api.public.workspaces().then((w) => { list.value = w; })];
-    // Loggé : on connaît l'état d'épinglage pour afficher 📌 plein/vide.
+    // Logged in: we know the pin state to show 📌 filled/empty.
     if (authed.value) tasks.push(api.pinned().then((p) => { pinnedSlugs.value = new Set(p.map((x) => x.slug)); }));
     await Promise.all(tasks);
   } catch (e) { error.value = String(e instanceof Error ? e.message : e); }
@@ -32,7 +32,7 @@ onMounted(async () => {
 async function togglePin(slug: string) {
   if (pinnedSlugs.value.has(slug)) { await api.unpinWorkspace(slug); pinnedSlugs.value.delete(slug); }
   else { await api.pinWorkspace(slug); pinnedSlugs.value.add(slug); }
-  pinnedSlugs.value = new Set(pinnedSlugs.value); // nouvelle réf → réactivité
+  pinnedSlugs.value = new Set(pinnedSlugs.value); // new ref → reactivity
 }
 
 async function runSearch() {
@@ -60,25 +60,25 @@ function highlight(s: string): string {
   <div class="pg">
     <header class="pg-top">
       <div class="brand">Memento<small>public</small></div>
-      <a class="signin" href="/login">Se connecter</a>
+      <a class="signin" href="/login">Sign in</a>
     </header>
 
     <div class="pg-body">
-      <h1>Bases de connaissances publiques</h1>
-      <p class="lede">Du savoir structuré, sourcé et cherchable, partagé ouvertement. Sans compte.</p>
+      <h1>Public knowledge bases</h1>
+      <p class="lede">Structured, sourced and searchable knowledge, shared openly. No account.</p>
 
       <form class="srch" @submit.prevent="runSearch">
-        <input v-model="q" placeholder="Rechercher dans toutes les bases publiques…" />
-        <button type="submit">Rechercher</button>
-        <button v-if="hits" type="button" class="ghost" @click="q = ''; hits = null">Effacer</button>
+        <input v-model="q" placeholder="Search across all public KBs…" />
+        <button type="submit">Search</button>
+        <button v-if="hits" type="button" class="ghost" @click="q = ''; hits = null">Clear</button>
       </form>
 
       <p v-if="error" class="err">{{ error }}</p>
 
-      <!-- Résultats de recherche -->
+      <!-- Search results -->
       <section v-if="hits">
-        <p class="count">{{ total }} bloc(s) trouvé(s){{ hits.length < total ? ` — ${hits.length} affichés` : "" }}</p>
-        <p v-if="searching" class="muted">Recherche…</p>
+        <p class="count">{{ total }} block(s) found{{ hits.length < total ? ` — ${hits.length} shown` : "" }}</p>
+        <p v-if="searching" class="muted">Searching…</p>
         <div v-for="h in hits" :key="h.blockId" class="hit" @click="openHit(h)">
           <div class="hmeta">
             <span class="badge">{{ h.type }}</span>
@@ -86,17 +86,17 @@ function highlight(s: string): string {
           </div>
           <div class="snippet" v-html="highlight(h.snippet)" />
         </div>
-        <p v-if="!searching && !hits.length" class="muted">Aucun résultat.</p>
+        <p v-if="!searching && !hits.length" class="muted">No results.</p>
       </section>
 
       <!-- Annuaire -->
       <section v-else>
-        <p v-if="loading" class="muted">Chargement…</p>
-        <p v-else-if="!list.length" class="muted">Aucune base publique pour l'instant.</p>
+        <p v-if="loading" class="muted">Loading…</p>
+        <p v-else-if="!list.length" class="muted">No public KB yet.</p>
         <div v-else class="grid">
           <div v-for="w in list" :key="w.slug" class="card" @click="openWs(w.slug)">
             <button v-if="authed" class="pin" :class="{ on: pinnedSlugs.has(w.slug) }" @click.stop="togglePin(w.slug)"
-              :title="pinnedSlugs.has(w.slug) ? 'Désépingler de mon univers' : 'Épingler dans mon univers'">📌</button>
+              :title="pinnedSlugs.has(w.slug) ? 'Unpin from my universe' : 'Pin to my universe'">📌</button>
             <div class="cname">{{ w.name }}</div>
             <div v-if="w.orgName" class="corg">{{ w.orgName }}</div>
             <p v-if="w.summary" class="csum">{{ w.summary }}</p>

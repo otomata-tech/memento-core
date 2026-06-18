@@ -1,9 +1,9 @@
 /**
- * Log d'usage — télémétrie produit : les agents y notent les problèmes rencontrés
- * avec l'outil Memento lui-même (erreur, résultat surprenant, capacité manquante,
- * friction, doc trompeuse). PAS du savoir KB : pas de FK workspace (texte libre),
- * pas de MemRevision, écriture ouverte à tout user authentifié — le signalement
- * doit toujours passer, même quand le contexte est cassé.
+ * Usage log — product telemetry: agents record the problems they hit with the
+ * Memento tool itself (error, surprising result, missing capability, friction,
+ * misleading docs). NOT KB knowledge: no workspace FK (free text), no MemRevision,
+ * write open to any authenticated user — the report must always go through, even
+ * when the context is broken.
  */
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db, usageLogs } from "./db.ts";
@@ -29,11 +29,11 @@ export async function logUsage(
     summary: args.summary,
     detail: args.detail ?? null,
   }).returning({ id: usageLogs.id, createdAt: usageLogs.createdAt });
-  return { logged: true, id: row.id, createdAt: row.createdAt, message: "Merci — signalement enregistré." };
+  return { logged: true, id: row.id, createdAt: row.createdAt, message: "Thanks — report recorded." };
 }
 
-/** Sans `workspace` : mes propres signalements. Avec `workspace` : tous les
- *  signalements de cette KB — réservé admin/curator (write) de l'org. */
+/** Without `workspace`: my own reports. With `workspace`: all reports of that
+ *  KB — admin/curator (write) of the org only. */
 export async function listUsageLogs(
   args: { workspace?: string; verb?: string; kind?: string; limit?: number },
   sub: string,

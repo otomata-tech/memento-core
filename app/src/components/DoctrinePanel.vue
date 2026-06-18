@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Modale doctrine : lecture complète (markdown) + édition (api.setDoctrine, curator/admin).
+// Doctrine modal: full read (markdown) + editing (api.setDoctrine, curator/admin).
 import { ref } from "vue";
 import { api, type Doctrine } from "../api";
 import { renderMd } from "../lib/blocks";
@@ -17,12 +17,12 @@ async function save() {
   busy.value = true;
   try {
     await api.setDoctrine(props.workspace, draft.value);
-    toast("Doctrine enregistrée", "ok");
+    toast("Doctrine saved", "ok");
     editing.value = false;
     emit("saved");
   } catch (e) {
     const s = String(e instanceof Error ? e.message : e);
-    toast(/403|interdit|forbidden|curator|admin/i.test(s) ? "réservé aux curateurs/admins" : s, "err");
+    toast(/403|interdit|forbidden|curator|admin/i.test(s) ? "curators/admins only" : s, "err");
   } finally { busy.value = false; }
 }
 </script>
@@ -41,24 +41,24 @@ async function save() {
       <div class="dt-body">
         <template v-if="!editing">
           <div v-if="doctrine.preamble" class="btext dt-md" v-html="renderMd(doctrine.preamble)" />
-          <p v-else class="muted" style="font-style:italic">Aucune doctrine — la carte de cette base est sans boussole.</p>
+          <p v-else class="muted" style="font-style:italic">No doctrine — this knowledge base's map has no compass.</p>
           <div v-if="doctrine.conventions?.blockTypes?.length" class="dt-conv">
-            <div class="eb">Types de blocs</div>
+            <div class="eb">Block types</div>
             <p class="mono" style="font-size:12px;color:var(--color-mute)">{{ doctrine.conventions.blockTypes.join(" · ") }}</p>
           </div>
         </template>
         <textarea v-else v-model="draft" rows="18" class="dt-edit"
-          placeholder="# Doctrine — …&#10;&#10;Méta-instructions (markdown) : à quoi sert cette base, comment l'explorer, le protocole de mise à jour."></textarea>
+          placeholder="# Doctrine — …&#10;&#10;Meta-instructions (markdown): what this knowledge base is for, how to explore it, the update protocol."></textarea>
       </div>
 
       <div class="dt-foot">
         <template v-if="!editing">
-          <button class="btn go" @click="startEdit">✎ Éditer</button>
-          <button class="btn" @click="emit('close')">Fermer</button>
+          <button class="btn go" @click="startEdit">✎ Edit</button>
+          <button class="btn" @click="emit('close')">Close</button>
         </template>
         <template v-else>
-          <button class="btn primary" :disabled="busy" @click="save">Enregistrer</button>
-          <button class="btn" :disabled="busy" @click="editing = false">Annuler</button>
+          <button class="btn primary" :disabled="busy" @click="save">Save</button>
+          <button class="btn" :disabled="busy" @click="editing = false">Cancel</button>
         </template>
       </div>
     </div>

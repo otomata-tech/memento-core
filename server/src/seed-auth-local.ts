@@ -1,11 +1,11 @@
 /**
- * Dev local uniquement : le Postgres local (Docker) n'a pas le schéma `auth` de
- * Supabase. En prod, la fonction Edge pointe sur le Postgres Supabase où `auth.users`
- * coexiste avec `public.mem_*` ; les requêtes de l'admin (résolution email↔sub) en
- * dépendent. On recrée ici une table `auth.users(id, email)` minimale, semée avec les
- * users déjà présents dans mem_memberships, pour que /admin marche en local.
+ * Local dev only: the local Postgres (Docker) does not have Supabase's `auth`
+ * schema. In prod, the Edge function targets the Supabase Postgres where `auth.users`
+ * coexists with `public.mem_*`; the admin's queries (email↔sub resolution) depend on
+ * it. Here we recreate a minimal `auth.users(id, email)` table, seeded with the users
+ * already present in mem_memberships, so that /admin works locally.
  *
- * Usage : DATABASE_URL=<local> npx tsx server/src/seed-auth-local.ts
+ * Usage: DATABASE_URL=<local> npx tsx server/src/seed-auth-local.ts
  */
 import { sql } from "drizzle-orm";
 import { db, memberships } from "./db.ts";
@@ -27,5 +27,5 @@ for (const sub of subs) {
   );
   seeded++;
 }
-console.log(`auth.users semée : ${seeded} user(s) — ${subs.join(", ")}`);
+console.log(`auth.users seeded: ${seeded} user(s) — ${subs.join(", ")}`);
 process.exit(0);

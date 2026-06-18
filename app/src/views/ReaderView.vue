@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// « Lire » — page d'accueil : épine (sections + doctrine) · colonne de blocs typés ·
-// dossier de provenance du bloc focalisé. Tout l'état dérive de l'URL (deep-link).
+// "Read" — home page: spine (sections + doctrine) · column of typed blocks ·
+// provenance card of the focused block. All state derives from the URL (deep-link).
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { supabase } from "../auth";
@@ -29,8 +29,8 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const showDoctrine = ref(false);
 const showAgent = ref(false);
-// Le mode agent est offert sur une KB publique (anonyme) OU à un utilisateur connecté
-// (le backend agent vérifie l'accès réel ; le viewer ne montre que ce qu'il sait lire).
+// Agent mode is offered on a public KB (anonymous) OR to a signed-in user
+// (the agent backend checks real access; the viewer only shows what it can read).
 const isPublicKb = ref(false);
 const isLoggedIn = ref(false);
 const agentAvailable = computed(() => isPublicKb.value || isLoggedIn.value);
@@ -39,8 +39,8 @@ async function reloadDoctrine() {
   doctrine.value = await api.doctrine(ws.value);
 }
 
-/** Journal de révisions : réservé aux lecteurs connectés (un anonyme sur une KB
- *  publique n'a pas à voir l'identité des contributeurs). */
+/** Revision log: restricted to signed-in readers (an anonymous user on a public
+ *  KB has no business seeing contributor identities). */
 async function loadRevisions(slug: string): Promise<Revision[]> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return [];
@@ -92,7 +92,7 @@ async function syncFromRoute() {
       sectionDocs.value = []; activeSectionId.value = null; doc.value = null;
     }
 
-    // Mode recherche
+    // Search mode
     if (route.path.endsWith("/search")) {
       searchMode.value = true;
       q.value = (route.query.q as string) ?? "";
@@ -105,7 +105,7 @@ async function syncFromRoute() {
     const path = route.query.path as string | undefined;
     if (!docId && !path) {
       const sid = firstSectionId();
-      if (sid) await loadSection(sid, true); // navigue vers le 1er doc
+      if (sid) await loadSection(sid, true); // navigate to the 1st doc
       return;
     }
     if (path || doc.value?.document.id !== docId) {
@@ -134,9 +134,9 @@ watch(() => route.fullPath, syncFromRoute, { immediate: true });
 <template>
   <AppShell page="reader" :ws="ws">
     <template #crumbs>
-      <span v-if="searchMode">recherche · <b>« {{ q }} »</b></span>
-      <span v-else-if="doc"><b>{{ doc.document.title }}</b><template v-if="focusedBlock"> · bloc {{ focusedBlock.id.slice(0, 8) }}</template></span>
-      <span v-else>carte</span>
+      <span v-if="searchMode">search · <b>"{{ q }}"</b></span>
+      <span v-else-if="doc"><b>{{ doc.document.title }}</b><template v-if="focusedBlock"> · block {{ focusedBlock.id.slice(0, 8) }}</template></span>
+      <span v-else>map</span>
     </template>
 
     <div class="bd reader">
@@ -145,20 +145,20 @@ watch(() => route.fullPath, syncFromRoute, { immediate: true });
         :active-section-id="activeSectionId" :active-doc-id="doc?.document.id ?? null" :docs="sectionDocs"
         @select="selectSection" @open-doc="openDoc" @open-doctrine="showDoctrine = true" />
 
-      <!-- Recherche -->
+      <!-- Search -->
       <div v-if="searchMode" class="doc">
-        <div class="eb">Recherche</div>
-        <h1 class="title">« {{ q }} »</h1>
-        <p class="summary">{{ searchResult?.total ?? 0 }} bloc(s) trouvé(s)</p>
+        <div class="eb">Search</div>
+        <h1 class="title">"{{ q }}"</h1>
+        <p class="summary">{{ searchResult?.total ?? 0 }} block(s) found</p>
         <div v-for="h in searchResult?.hits ?? []" :key="h.blockId" class="block role-mute"
           @click="openHit(h.docPath)">
           <div class="bmeta"><span class="badge">{{ h.type }}</span><span class="gx">{{ h.sectionPath }}</span></div>
           <div class="bbody"><div class="btext" v-html="highlight(h.snippet)" /></div>
         </div>
-        <p v-if="searchResult && !searchResult.hits.length" class="muted">Aucun résultat.</p>
+        <p v-if="searchResult && !searchResult.hits.length" class="muted">No results.</p>
       </div>
 
-      <!-- Lecteur -->
+      <!-- Reader -->
       <div v-else class="doc">
         <template v-if="doc">
           <h1 class="title">{{ doc.document.title }}</h1>
@@ -166,24 +166,24 @@ watch(() => route.fullPath, syncFromRoute, { immediate: true });
           <BlockRow v-for="b in doc.blocks" :key="b.id" :block="b"
             :focused="b.id === focusedBlock?.id" :deprecated="deprecated"
             @select="focusBlock(b.id)" @graph="openGraph" />
-          <p v-if="!doc.blocks.length" class="muted">Document sans bloc.</p>
+          <p v-if="!doc.blocks.length" class="muted">Document has no blocks.</p>
         </template>
-        <p v-else-if="loading" class="muted">Chargement…</p>
+        <p v-else-if="loading" class="muted">Loading…</p>
         <p v-else-if="error" class="muted" style="color:var(--color-weak-ink)">{{ error }}</p>
-        <p v-else class="muted">Sélectionne une section.</p>
+        <p v-else class="muted">Select a section.</p>
       </div>
 
-      <!-- Dossier -->
+      <!-- Card -->
       <BlockDossier v-if="!searchMode && focusedBlock" :block="focusedBlock" :history="focusedHistory"
         @refresh="reloadDoc" @graph="openGraph" />
-      <div v-else-if="!searchMode" class="dossier role-mute"><div class="eb">Dossier</div><p class="muted" style="margin-top:8px">Sélectionne un bloc.</p></div>
+      <div v-else-if="!searchMode" class="dossier role-mute"><div class="eb">Card</div><p class="muted" style="margin-top:8px">Select a block.</p></div>
     </div>
 
     <DoctrinePanel v-if="showDoctrine && doctrine" :workspace="ws" :doctrine="doctrine"
       @close="showDoctrine = false" @saved="reloadDoctrine" />
 
-    <!-- Mode agent (KB publiques uniquement) -->
-    <button v-if="agentAvailable && !showAgent" class="agent-fab" @click="showAgent = true">✦ Demander à l'agent</button>
+    <!-- Agent mode (public KBs only) -->
+    <button v-if="agentAvailable && !showAgent" class="agent-fab" @click="showAgent = true">✦ Ask the agent</button>
     <AgentChat v-if="showAgent && doctrine" :workspace="ws" :kb-name="doctrine.workspace.name"
       @close="showAgent = false" />
   </AppShell>

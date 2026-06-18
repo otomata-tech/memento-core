@@ -1,13 +1,13 @@
-// Client REST minimal vers le backend Memento (/api miroir des verbes MCP).
+// Minimal REST client to the Memento backend (/api mirror of the MCP verbs).
 import { supabase } from "./auth";
 
-/** Jeton de session, ou null en lecture anonyme (KB publique). */
+/** Session token, or null in anonymous read (public KB). */
 async function token(): Promise<string | null> {
   const { data: { session } } = await supabase.auth.getSession();
   return session?.access_token ?? null;
 }
 
-/** En-tête Authorization seulement si une session existe (sinon lecture anonyme). */
+/** Authorization header only if a session exists (otherwise anonymous read). */
 async function authHeader(): Promise<Record<string, string>> {
   const t = await token();
   return t ? { Authorization: `Bearer ${t}` } : {};
@@ -94,7 +94,7 @@ export interface WorkspaceAccess {
   workspace: string; org: string | null; orgName: string | null;
   visibility: "org" | "private" | "public";
   grants: WorkspaceGrant[];
-  inherited: WorkspaceGrant[]; // membres de l'org (si visibility=org)
+  inherited: WorkspaceGrant[]; // org members (if visibility=org)
 }
 
 export const api = {
@@ -122,7 +122,7 @@ export const api = {
   ingestions: (workspace: string, status?: string) =>
     get<{ count: number; ingestions: IngestionSummary[] }>("/ingestions", { workspace, status }),
   ingestion: (id: string) => get<IngestionDetail>("/ingestion", { id }),
-  // ── Écriture curée (curator/admin) — miroir REST des verbes mem_* ──
+  // ── Curated writes (curator/admin) — REST mirror of the mem_* verbs ──
   verifyBlock: (id: string, verified = true, reason?: string) =>
     send<{ id: string; verifiedAt: string | null; verifiedBy: string | null }>(
       "POST", "/block/verify", { id, verified, reason }),
@@ -159,7 +159,7 @@ export const api = {
     removeMember: (orgSlug: string, userId: string) =>
       send<{ removed: string }>("DELETE", "/admin/members", { orgSlug, userId }),
   },
-  // ── Périmètre par KB (issue #60) — réservé aux admins de la base ──
+  // ── Scope per KB (issue #60) — reserved for KB admins ──
   grants: (workspace: string) => get<WorkspaceAccess>("/workspace/grants", { workspace }),
   grant: (workspace: string, email: string, role: string) =>
     send<{ workspace: string; email: string; role: string; provisioned: boolean; emailSent: boolean; inviteLink: string | null }>(
@@ -168,7 +168,7 @@ export const api = {
     send<{ workspace: string; removed: string }>("DELETE", "/workspace/grants", { workspace, userId }),
   setVisibility: (workspace: string, visibility: "org" | "private" | "public") =>
     send<{ workspace: string; visibility: string }>("POST", "/workspace/visibility", { workspace, visibility }),
-  // ── Surface publique (sans auth) : galerie + recherche des KB publiques ──
+  // ── Public surface (no auth): gallery + search of public KBs ──
   public: {
     workspaces: () => get<PublicWorkspace[]>("/public/workspaces"),
     search: (q: string, maxHits = 30) =>
@@ -176,8 +176,8 @@ export const api = {
   },
 };
 
-// ── Mode agent (chat sur une KB publique) — function `agent`, SSE ──
-// Surface séparée du REST (/api) : streaming sur /agent/chat, sans auth.
+// ── Agent mode (chat on a public KB) — function `agent`, SSE ──
+// Surface separate from REST (/api): streaming on /agent/chat, no auth.
 export type AgentEvent =
   | { type: "token"; text: string }
   | { type: "status"; tool: string }
@@ -186,7 +186,7 @@ export type AgentEvent =
 
 export type AgentChatMessage = { role: "user" | "assistant"; content: string };
 
-/** POST /agent/chat en SSE. Appelle `onEvent` au fil de l'eau (token/status/done/error). */
+/** POST /agent/chat via SSE. Calls `onEvent` as events arrive (token/status/done/error). */
 export async function agentChat(
   workspace: string,
   message: string,
@@ -202,7 +202,7 @@ export async function agentChat(
   });
   if (!res.ok || !res.body) {
     let msg = `agent → ${res.status}`;
-    try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch { /* corps non-JSON */ }
+    try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch { /* non-JSON body */ }
     throw new Error(msg);
   }
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -226,8 +226,8 @@ export async function agentChat(
         if (event === "token") onEvent({ type: "token", text: payload.text ?? "" });
         else if (event === "status") onEvent({ type: "status", tool: payload.tool ?? "" });
         else if (event === "done") onEvent({ type: "done", steps: payload.steps ?? 0 });
-        else if (event === "error") onEvent({ type: "error", message: payload.message ?? "erreur" });
-      } catch { /* chunk partiel/non-JSON, ignoré */ }
+        else if (event === "error") onEvent({ type: "error", message: payload.message ?? "error" });
+      } catch { /* partial/non-JSON chunk, ignored */ }
     }
   }
 }

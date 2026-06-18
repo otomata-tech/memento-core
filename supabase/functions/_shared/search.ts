@@ -1,10 +1,10 @@
 /**
- * Recherche full-text par BLOC (tsvector FR + unaccent, cf. spec §7).
- * Le serveur ne rend jamais le contenu complet : chaque hit est un snippet
- * (ts_headline) + le chemin slugifié pour drill direct.
+ * Full-text search per BLOCK (FR tsvector + unaccent, cf. spec §7).
+ * The server never returns the full content: each hit is a snippet (ts_headline) +
+ * the slugified path for direct drill.
  *
- * La colonne `search_vector` et la config `french_unaccent` sont posées par la
- * migration 0001 (hors DSL Drizzle) → requête SQL brute ici.
+ * The `search_vector` column and the `french_unaccent` config are set by migration
+ * 0001 (outside the Drizzle DSL) → raw SQL query here.
  */
 import { eq, inArray, sql } from "drizzle-orm";
 import { db, workspaces, orgs } from "./db.ts";
@@ -31,7 +31,7 @@ export async function searchBlocks(args: SearchArgs) {
   if (args.blockType) conds.push(sql`b.type = ${args.blockType}::mem_block_type`);
   if (args.docKind) conds.push(sql`d.kind = ${args.docKind}`);
 
-  // Filtre par sous-arbre de sections via préfixe de chemin (résolu côté JS).
+  // Filter by section subtree via path prefix (resolved on the JS side).
   const pathMap = await loadSectionPathMap(ws.id, ws.slug);
   let sectionIdFilter: string[] | null = null;
   if (args.sectionPath) {
@@ -105,15 +105,15 @@ export async function searchBlocks(args: SearchArgs) {
       rank: Number(r.rank),
     };
   });
-  // total = nombre de blocs CORRESPONDANTS (count over), pas le nombre retourné.
+  // total = number of MATCHING blocks (count over), not the number returned.
   const total = rows.length ? Number(rows[0].total_count) : 0;
   return { hits, total, hasMore: total > hits.length };
 }
 
 /**
- * Recherche GLOBALE : toutes les KB accessibles du caller (`workspaceIds`).
- * Chaque hit est étiqueté {workspace, org} — sert au « où ai-je noté ça ? » ;
- * le drill reste mono-KB (doctrine-first).
+ * GLOBAL search: all KBs accessible to the caller (`workspaceIds`).
+ * Each hit is labeled {workspace, org} — serves the "where did I note that?";
+ * the drill stays single-KB (doctrine-first).
  */
 export async function searchBlocksGlobal(args: {
   workspaceIds: string[];
@@ -164,7 +164,7 @@ export async function searchBlocksGlobal(args: {
     LIMIT ${limit}
   `);
 
-  // Chemins slugifiés : une map par KB touchée seulement.
+  // Slugified paths: one map per touched KB only.
   const touched = [...new Set([...rows].map((r) => r.workspace_id))];
   const maps = new Map<string, Map<string, string>>();
   for (const wid of touched) {
@@ -200,10 +200,10 @@ export async function searchBlocksGlobal(args: {
 }
 
 /**
- * Recherche HYBRIDE : lexical (tsvector) + sémantique (kNN) fusionnés par RRF
- * (Reciprocal Rank Fusion, k=60) — pas de calibration de scores entre régimes.
- * Si l'API d'embedding est indisponible, dégrade en lexical seul et le DIT
- * (`modes` dans la réponse) — pas de fallback silencieux.
+ * HYBRID search: lexical (tsvector) + semantic (kNN) fused via RRF (Reciprocal Rank
+ * Fusion, k=60) — no score calibration between regimes. If the embedding API is
+ * unavailable, degrades to lexical only and SAYS so (`modes` in the response) — no
+ * silent fallback.
  */
 import { similarBlocks } from "./semantic.ts";
 import { resolveSectionIds } from "./paths.ts";
@@ -236,9 +236,9 @@ type HybridHit = {
 };
 
 /**
- * Recherche PUBLIQUE : recherche globale sur TOUTES les KB publiques (non
- * archivées), sans auth. Lexicale seule — déterministe et sans coût d'embedding
- * sur une surface anonyme. Chaque hit est étiqueté {workspace, org} pour le drill.
+ * PUBLIC search: global search over ALL public KBs (not archived), without auth.
+ * Lexical only — deterministic and without embedding cost on an anonymous surface.
+ * Each hit is labeled {workspace, org} for the drill.
  */
 export async function searchPublic(args: { q: string; blockType?: string; docKind?: string; maxHits?: number }) {
   const refs = await publicWorkspaceRefs();
@@ -267,11 +267,11 @@ export async function hybridSearch(args: {
   const mono = args.workspaces.length === 1 ? args.workspaces[0] : null;
   const bySlug = new Map(args.workspaces.map((w) => [w.id, w]));
 
-  // Jamais d'acceptation muette : un filtre non applicable est une erreur.
+  // Never a silent acceptance: a non-applicable filter is an error.
   if (!mono && args.sectionPath) {
-    throw new Error('`sectionPath` non supporté en recherche globale ("*") — cible une KB précise');
+    throw new Error('`sectionPath` not supported in global search ("*") — target a specific KB');
   }
-  // Sous-arbre résolu UNE fois, appliqué aux deux régimes (mono-KB).
+  // Subtree resolved ONCE, applied to both regimes (single-KB).
   const sectionIds = mono && args.sectionPath
     ? await resolveSectionIds(mono.id, mono.slug, args.sectionPath)
     : null;
@@ -301,7 +301,7 @@ export async function hybridSearch(args: {
   if (lex) modes.push("lexical");
   if (sem) modes.push("semantic");
 
-  // Fusion RRF : score = somme des 1/(K + rang) par régime où le bloc apparaît.
+  // RRF fusion: score = sum of 1/(K + rank) per regime where the block appears.
   const fused = new Map<string, HybridHit>();
   (lex?.hits ?? []).forEach((h: any, i: number) => {
     fused.set(h.blockId, {
@@ -357,9 +357,9 @@ export async function hybridSearch(args: {
     }
   });
 
-  // DEPRECATED : déclassé par défaut (jamais exclu dur) — le hit reste visible,
-  // avec son docStatus, mais derrière les blocs actifs. `includeDeprecated`
-  // restaure le classement pur.
+  // DEPRECATED: downranked by default (never hard-excluded) — the hit stays visible,
+  // with its docStatus, but behind the active blocks. `includeDeprecated` restores
+  // the pure ranking.
   const declass = !args.includeDeprecated;
   const hits = [...fused.values()]
     .sort((a, b) => {
@@ -373,8 +373,8 @@ export async function hybridSearch(args: {
     .slice(0, limit)
     .map((h) => ({ ...h, score: Math.round(h.score * 10000) / 10000 }));
 
-  // `lexicalTotal` = vrai nombre de blocs correspondants (count over) ; le kNN
-  // n'a pas de notion de total (top-k par construction) → null en mode semantic.
+  // `lexicalTotal` = true number of matching blocks (count over); kNN has no notion
+  // of total (top-k by construction) → null in semantic mode.
   return {
     mode,
     modes,

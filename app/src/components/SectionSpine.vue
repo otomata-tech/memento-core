@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// Épine de gauche du Lecteur : carte doctrine + arbre des sections, dont les documents
-// de la section active sont listés en sous-lignes. Composant de présentation (dumb).
+// Left spine of the Reader: doctrine card + section tree, whose documents
+// of the active section are listed as sub-rows. Presentation (dumb) component.
 import { computed } from "vue";
 import type { SectionNode, DocMeta } from "../api";
 
@@ -13,7 +13,7 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ (e: "select", id: string): void; (e: "openDoc", id: string): void; (e: "openDoctrine"): void }>();
 
-// Aplatit l'arbre (≤ 3 niveaux) en liste avec profondeur, pour un rendu sans récursion de composant.
+// Flattens the tree (≤ 3 levels) into a list with depth, for rendering without component recursion.
 const flat = computed(() => {
   const out: { node: SectionNode; depth: number }[] = [];
   const walk = (nodes: SectionNode[], depth: number) => {
@@ -26,12 +26,12 @@ const flat = computed(() => {
 
 <template>
   <div class="side">
-    <div class="doctrine" role="button" title="Voir / éditer la doctrine" @click="emit('openDoctrine')">
-      <div class="eb">✶ Doctrine <span class="dt-more">lire ›</span></div>
+    <div class="doctrine" role="button" title="View / edit the doctrine" @click="emit('openDoctrine')">
+      <div class="eb">✶ Doctrine <span class="dt-more">read ›</span></div>
       <p v-if="preamble">{{ preamble }}</p>
-      <p v-else style="font-style:italic;opacity:.8">Aucune doctrine — la carte est sans boussole.</p>
+      <p v-else style="font-style:italic;opacity:.8">No doctrine — the map has no compass.</p>
     </div>
-    <div class="eb">Épine — sections</div>
+    <div class="eb">Spine — sections</div>
     <template v-for="{ node, depth } in flat" :key="node.id">
       <div class="row" :class="{ on: node.id === activeSectionId }"
         :style="{ paddingLeft: 18 + depth * 14 + 'px' }" @click="emit('select', node.id)">

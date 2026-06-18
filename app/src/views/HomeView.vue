@@ -2,41 +2,41 @@
 const FEATURES = [
   {
     img: "/illust-code.webp",
-    title: "Des blocs sourcés, pas des chunks",
-    body: "L'atome est le bloc typé — principe, règle, exception, procédure. Chaque bloc porte ses sources, ses liens (dépend de, contredit, remplace), son statut de vérification.",
+    title: "Sourced blocks, not chunks",
+    body: "The atom is the typed block — principle, rule, exception, procedure. Each block carries its sources, its links (depends on, contradicts, supersedes), its verification status.",
   },
   {
     img: "/illust-access.webp",
-    title: "Une base par périmètre de partage",
-    body: "Une base par mission ou client, une base perso — pas de fourre-tout. Une organisation possède la base, ses membres y accèdent selon leur rôle.",
+    title: "One base per sharing scope",
+    body: "One base per mission or client, one personal base — no catch-all. An organization owns the base; its members access it according to their role.",
   },
   {
     img: "/illust-startup.webp",
-    title: "Faite pour les agents, via MCP",
-    body: "Les agents lisent doctrine-first (une carte compacte, puis le forage) et écrivent en proposant. Aucun LLM côté serveur : la lecture est déterministe.",
+    title: "Built for agents, via MCP",
+    body: "Agents read doctrine-first (a compact map, then drilling down) and write by proposing. No LLM server-side: reads are deterministic.",
   },
 ];
 
 const IDEAS = [
-  { n: "01", title: "Le bloc est l'atome", body: "Adressable, sourcé, commenté, lié — la maille fine est la garantie d'auditabilité." },
-  { n: "02", title: "Contrainte en haut, liberté en bas", body: "Une épine dorsale de sections stricte et peu profonde ; en dessous, les documents respirent." },
-  { n: "03", title: "Doctrine-first", body: "L'agent charge la carte, puis fore — jamais de mur de texte non demandé." },
-  { n: "04", title: "Serveur bête, agent intelligent", body: "L'intelligence est à l'écriture, la lecture est déterministe — on paie la structuration une fois." },
-  { n: "05", title: "Propose-valide", body: "Rien n'entre sans revue ; les contradictions ne sont jamais auto-appliquées." },
-  { n: "06", title: "Un savoir qui survit", body: "Sources ancrées aux blocs, journal d'intentions : la base évolue sans se dégrader." },
+  { n: "01", title: "The block is the atom", body: "Addressable, sourced, commented, linked — the fine grain is the guarantee of auditability." },
+  { n: "02", title: "Constraint at the top, freedom at the bottom", body: "A strict, shallow backbone of sections; beneath it, documents breathe." },
+  { n: "03", title: "Doctrine-first", body: "The agent loads the map, then drills down — never a wall of unrequested text." },
+  { n: "04", title: "Dumb server, smart agent", body: "The intelligence is in the writing; reads are deterministic — you pay for structuring once." },
+  { n: "05", title: "Propose-validate", body: "Nothing enters without review; contradictions are never auto-applied." },
+  { n: "06", title: "Knowledge that survives", body: "Sources anchored to blocks, a log of intentions: the base evolves without degrading." },
 ];
 
 const STEPS = [
-  { n: "01", title: "Connecter", body: "N'importe quel client MCP : claude.ai, Claude Code (plugin embarqué), Mistral Le Chat, ChatGPT. Coller l'URL du connecteur, OAuth au premier usage." },
-  { n: "02", title: "Lire doctrine-first", body: "L'agent charge la carte de la base — préambule, arbre, conventions — puis cible 2-3 sections." },
-  { n: "03", title: "Proposer", body: "Le savoir nouveau est proposé en change-set classé : confirme, enrichit, contredit, périme." },
-  { n: "04", title: "Valider", body: "Vous revoyez, vous appliquez. Chaque mutation est journalisée avec son pourquoi." },
+  { n: "01", title: "Connect", body: "Any MCP client: claude.ai, Claude Code (bundled plugin), Mistral Le Chat, ChatGPT. Paste the connector URL, OAuth on first use." },
+  { n: "02", title: "Read doctrine-first", body: "The agent loads the base's map — preamble, tree, conventions — then targets 2-3 sections." },
+  { n: "03", title: "Propose", body: "New knowledge is proposed as a classified change-set: confirms, enriches, contradicts, deprecates." },
+  { n: "04", title: "Validate", body: "You review, you apply. Every mutation is logged with its rationale." },
 ];
 </script>
 
 <template>
   <div class="home">
-    <!-- Héro illustré -->
+    <!-- Illustrated hero -->
     <section class="hero">
       <picture class="hero-bg">
         <img src="/illust-collab.webp" alt="" />
@@ -45,28 +45,28 @@ const STEPS = [
       <header class="hero-top">
         <span class="hbrand">Memento<small>mento.cc</small></span>
         <nav class="hnav">
-          <router-link to="/plugin">Plugin Claude Code</router-link>
-          <router-link to="/login" class="cta">Se connecter</router-link>
+          <router-link to="/plugin">Claude Code Plugin</router-link>
+          <router-link to="/login" class="cta">Sign in</router-link>
         </nav>
       </header>
       <div class="hero-body">
-        <p class="eyebrow light">Substrat de connaissance pour agents · MCP</p>
-        <h1>Memento mori,<br />note tout.</h1>
+        <p class="eyebrow light">Knowledge substrate for agents · MCP</p>
+        <h1>Memento mori,<br />note everything.</h1>
         <p class="lede">
-          Une base de connaissance que des agents <b>lisent et maintiennent</b>, sous
-          contrôle humain — structurée, sourcée, vivante et auditable.
+          A knowledge base that agents <b>read and maintain</b>, under
+          human control — structured, sourced, living and auditable.
         </p>
         <div class="actions">
-          <router-link to="/login" class="btn-solar">Ouvrir le viewer</router-link>
-          <router-link to="/plugin" class="btn-ghost">Brancher Claude Code →</router-link>
+          <router-link to="/login" class="btn-solar">Open the viewer</router-link>
+          <router-link to="/plugin" class="btn-ghost">Connect Claude Code →</router-link>
         </div>
       </div>
     </section>
 
     <main>
-      <!-- Features illustrées -->
+      <!-- Illustrated features -->
       <section class="feats">
-        <p class="eyebrow">Ce que Memento fait</p>
+        <p class="eyebrow">What Memento does</p>
         <div class="fgrid">
           <article v-for="f in FEATURES" :key="f.title" class="feat">
             <div class="fimg"><img :src="f.img" alt="" loading="lazy" /></div>
@@ -76,9 +76,9 @@ const STEPS = [
         </div>
       </section>
 
-      <!-- Six idées -->
+      <!-- Six ideas -->
       <section class="ideas">
-        <p class="eyebrow">Les six idées</p>
+        <p class="eyebrow">The six ideas</p>
         <div class="igrid">
           <article v-for="i in IDEAS" :key="i.n" class="idea">
             <span class="num">{{ i.n }}</span>
@@ -90,9 +90,9 @@ const STEPS = [
         </div>
       </section>
 
-      <!-- Comment ça marche -->
+      <!-- How it works -->
       <section class="steps">
-        <p class="eyebrow">Comment ça marche</p>
+        <p class="eyebrow">How it works</p>
         <div class="sgrid">
           <article v-for="s in STEPS" :key="s.n" class="step">
             <span class="snum">{{ s.n }}</span>
@@ -103,22 +103,22 @@ const STEPS = [
       </section>
     </main>
 
-    <!-- CTA final illustré -->
+    <!-- Illustrated final CTA -->
     <section class="final">
       <picture class="final-bg"><img src="/illust-aerial.webp" alt="" loading="lazy" /></picture>
       <div class="final-veil" />
       <div class="final-body">
-        <h2>Les bases sont privées, l'accès sur invitation.</h2>
+        <h2>Bases are private, access by invitation.</h2>
         <div class="actions">
-          <router-link to="/login" class="btn-solar">Se connecter</router-link>
-          <a href="mailto:hello@mento.cc" class="btn-ghost">Demander un accès</a>
+          <router-link to="/login" class="btn-solar">Sign in</router-link>
+          <a href="mailto:hello@mento.cc" class="btn-ghost">Request access</a>
         </div>
       </div>
     </section>
 
     <footer class="foot">
       <span class="brand-foot">Memento</span>
-      <span class="muted">un projet <a href="https://otomata.tech">Otomata</a></span>
+      <span class="muted">an <a href="https://otomata.tech">Otomata</a> project</span>
     </footer>
   </div>
 </template>
@@ -128,7 +128,7 @@ const STEPS = [
 main { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
 .eyebrow.light { color: rgba(254, 252, 245, 0.75); }
 
-/* ── Héro illustré (structure mento.cc, tokens Otomata) ── */
+/* ── Illustrated hero (mento.cc structure, Otomata tokens) ── */
 .hero { position: relative; color: var(--color-bg); overflow: hidden; }
 .hero-bg img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .hero-veil { position: absolute; inset: 0;
@@ -154,7 +154,7 @@ main { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
 .btn-ghost { font-weight: 600; font-size: 14.5px; color: inherit; border-bottom: 2px solid var(--color-primary); padding-bottom: 2px; }
 .btn-ghost:hover { text-decoration: none; color: var(--color-primary); }
 
-/* ── Features illustrées ── */
+/* ── Illustrated features ── */
 .feats { padding: 52px 0 12px; }
 .fgrid { margin-top: 22px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; }
 .feat .fimg { border: 1px solid var(--color-hair); aspect-ratio: 16/10; overflow: hidden; }
@@ -162,7 +162,7 @@ main { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
 .feat h2 { font-family: var(--font-display); font-size: 18px; font-weight: 650; letter-spacing: -0.01em; margin: 14px 0 7px; }
 .feat p { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--color-ink-soft); }
 
-/* ── Six idées (compactes) ── */
+/* ── Six ideas (compact) ── */
 .ideas { border-top: 1px solid var(--color-hair); margin-top: 44px; padding: 40px 0 8px; }
 .igrid { margin-top: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 18px 36px; }
 .idea { display: flex; gap: 14px; align-items: baseline; }
@@ -170,7 +170,7 @@ main { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
 .idea h3 { font-family: var(--font-display); font-size: 15.5px; font-weight: 650; margin: 0 0 3px; }
 .idea p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--color-ink-soft); }
 
-/* ── Étapes numérotées ── */
+/* ── Numbered steps ── */
 .steps { border-top: 1px solid var(--color-hair); margin-top: 44px; padding: 40px 0 56px; }
 .sgrid { margin-top: 22px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--color-hair); border: 1px solid var(--color-hair); }
 .step { background: var(--color-surface); padding: 20px 18px 24px; }
@@ -178,7 +178,7 @@ main { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
 .step h3 { font-family: var(--font-display); font-size: 16px; font-weight: 650; margin: 10px 0 6px; }
 .step p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--color-ink-soft); }
 
-/* ── CTA final illustré ── */
+/* ── Illustrated final CTA ── */
 .final { position: relative; color: var(--color-bg); overflow: hidden; }
 .final-bg img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .final-veil { position: absolute; inset: 0; background: rgba(44, 33, 18, 0.72); }

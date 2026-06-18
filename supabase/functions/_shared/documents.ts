@@ -1,9 +1,9 @@
 /**
- * Lecture d'un document (blocs ordonnés + sources/liens/commentaires assemblés
- * par bloc) et d'un bloc isolé. Cf. spec §5.1 `mem_document` / `mem_block`.
+ * Reading a document (ordered blocks + sources/links/comments assembled per
+ * block) and a single block. Cf. spec §5.1 `mem_document` / `mem_block`.
  *
- * Les liens et commentaires sont en lecture seule ici (leurs verbes d'écriture
- * arrivent aux Lots 2-3) ; les tables existent déjà, on les expose dès la lecture.
+ * Links and comments are read-only here (their write verbs arrive in Batches 2-3);
+ * the tables already exist, so we expose them as soon as reading is available.
  */
 import { and, eq, inArray, or } from "drizzle-orm";
 import { db, documents, blocks, sources, blockSources, links, comments, sections, workspaces } from "./db.ts";
@@ -14,11 +14,11 @@ type Block = typeof blocks.$inferSelect;
 
 async function documentById(id: string) {
   const [row] = await db.select().from(documents).where(eq(documents.id, id)).limit(1);
-  if (!row) throw new Error(`Document introuvable: ${id}`);
+  if (!row) throw new Error(`Document not found: ${id}`);
   return row;
 }
 
-/** Slug de la KB propriétaire d'une section (pour les liens viewer). */
+/** Slug of the KB that owns a section (for viewer links). */
 async function workspaceSlugOfSection(sectionId: string): Promise<string> {
   const [row] = await db
     .select({ slug: workspaces.slug })
@@ -26,7 +26,7 @@ async function workspaceSlugOfSection(sectionId: string): Promise<string> {
     .innerJoin(workspaces, eq(sections.workspaceId, workspaces.id))
     .where(eq(sections.id, sectionId))
     .limit(1);
-  if (!row) throw new Error(`Section introuvable: ${sectionId}`);
+  if (!row) throw new Error(`Section not found: ${sectionId}`);
   return row.slug;
 }
 
@@ -76,7 +76,7 @@ async function loadBlockComments(blockIds: string[]) {
     .where(and(eq(comments.targetType, "BLOCK"), inArray(comments.targetId, blockIds)));
 }
 
-/** Assemble un bloc avec ses sources / liens (entrants+sortants) / commentaires. */
+/** Assembles a block with its sources / links (incoming+outgoing) / comments. */
 function assembleBlock(
   block: Block,
   src: Awaited<ReturnType<typeof loadBlockSources>>,
@@ -162,7 +162,7 @@ export async function getDocument(args: { id?: string; path?: string }) {
 
 export async function getBlock(id: string) {
   const [block] = await db.select().from(blocks).where(eq(blocks.id, id)).limit(1);
-  if (!block) throw new Error(`Bloc introuvable: ${id}`);
+  if (!block) throw new Error(`Block not found: ${id}`);
   const [doc, src, lnk, cmt] = await Promise.all([
     documentById(block.documentId),
     loadBlockSources([id]),
@@ -178,6 +178,6 @@ export async function getBlock(id: string) {
 }
 
 function requirePath(path?: string): string {
-  if (!path) throw new Error("`id` ou `path` requis");
+  if (!path) throw new Error("`id` or `path` required");
   return path;
 }

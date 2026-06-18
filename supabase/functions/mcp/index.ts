@@ -1,15 +1,15 @@
 /**
- * Memento MCP — Supabase Edge Function (Deno + SDK officiel @modelcontextprotocol/sdk).
- * Les 6 verbes de lecture `mem_*`, au-dessus de la couche services partagée (`../_shared/`).
+ * Memento MCP — Supabase Edge Function (Deno + official @modelcontextprotocol/sdk).
+ * The 6 read verbs `mem_*`, on top of the shared services layer (`../_shared/`).
  *
- * Transport : WebStandardStreamableHTTPServerTransport (Request/Response web → compatible
- * runtime Edge). STATELESS (sessionIdGenerator: undefined) : serveur + transport neufs par
- * requête, adapté aux isolates éphémères de l'Edge. La réponse `initialize` sort en SSE
- * (text/event-stream) — requis par le client MCP de claude.ai (mcp-lite renvoyait du JSON,
- * d'où l'échec du handshake).
+ * Transport: WebStandardStreamableHTTPServerTransport (web Request/Response → compatible
+ * with the Edge runtime). STATELESS (sessionIdGenerator: undefined): fresh server + transport
+ * per request, suited to the Edge's ephemeral isolates. The `initialize` response is emitted as SSE
+ * (text/event-stream) — required by claude.ai's MCP client (mcp-lite returned JSON,
+ * hence the handshake failure).
  *
- * Local : DATABASE_URL=... deno run -A supabase/functions/mcp/index.ts
- * Deploy : supabase functions deploy mcp
+ * Local: DATABASE_URL=... deno run -A supabase/functions/mcp/index.ts
+ * Deploy: supabase functions deploy mcp
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
@@ -39,9 +39,9 @@ import { setDoctrine, updateWorkspace, archiveWorkspace } from "../_shared/works
 import { listMyOrgs, createWorkspace, createOrg, transferWorkspace } from "../_shared/admin.ts";
 import { listGrants, grantAccess, revokeGrant, setVisibility } from "../_shared/grants.ts";
 import { listAccounts } from "../_shared/platform.ts";
-// Surface MCP v2 (#18) : plus de verbes de mutation directs — toute écriture de
-// contenu passe par mem_stage_changes (op-codes → apply). Les handlers de write.ts
-// restent appelés par OPS à l'apply ; mcp n'en utilise plus que les commentaires.
+// MCP v2 surface (#18): no more direct mutation verbs — every content write
+// goes through mem_stage_changes (op-codes → apply). The write.ts handlers
+// are still called by OPS at apply time; mcp only uses the comment ones now.
 import { addComment, resolveComment } from "../_shared/write.ts";
 import {
   createSection, renameSection, deleteSection, reorder, moveDocuments, splitSection, mergeSections,
@@ -59,109 +59,109 @@ const SK = sourceKind.enumValues as [string, ...string[]];
 const LR = linkRelation.enumValues as [string, ...string[]];
 const CT = commentTarget.enumValues as [string, ...string[]];
 
-const INSTRUCTIONS = `Memento — base de connaissance structurée, sourcée, multi-KB.
+const INSTRUCTIONS = `Memento — structured, sourced, multi-KB knowledge base.
 
-Ce préambule EST ta doctrine globale (comment Memento marche) ; chaque KB porte EN PLUS
-sa propre doctrine — mem_doctrine(workspace).
+This preamble IS your global doctrine (how Memento works); each KB ALSO carries
+its own doctrine — mem_doctrine(workspace).
 
-STRUCTURE : une **org** = un tenant (annuaire de membres : équipe, mission, client —
-chacun a aussi son org perso) ; une **KB** (workspace) = une base de savoir appartenant
-à UNE org, qui PORTE SON PÉRIMÈTRE : visibility "org" (tous les membres de l'org, leur
-rôle d'org par défaut), "private" (accès explicites seuls) ou "public" (lisible/cherchable
-par tous, l'org garde la curation), plus des **grants** individuels par KB (élever un membre
-en curator, inviter un externe — mem_grant ; un grant donne lecture ou écriture, JAMAIS la
-gouvernance). Ton rôle effectif sur une KB = max(grant, rôle d'org si visibility=org|public) ;
-curator+ = écriture, member = lecture. La gouvernance (partager, visibility, archiver,
-transférer) = admin de l'ORG propriétaire uniquement. myRole null = base de ton org gérable
-mais non lisible (private sans grant).
+STRUCTURE: an **org** = a tenant (member directory: team, mission, client —
+each also has their personal org); a **KB** (workspace) = a body of knowledge belonging
+to ONE org, which CARRIES ITS SCOPE: visibility "org" (all org members, their
+default org role), "private" (explicit accesses only) or "public" (readable/searchable
+by everyone, the org keeps curation), plus per-KB individual **grants** (promote a member
+to curator, invite an external party — mem_grant; a grant gives read or write, NEVER
+governance). Your effective role on a KB = max(grant, org role if visibility=org|public);
+curator+ = write, member = read. Governance (share, visibility, archive,
+transfer) = admin of the owning ORG only. myRole null = a KB of your org that is manageable
+but not readable (private without a grant).
 
-DÉMARRAGE (important — le serveur est sans état) :
-1. Oriente-toi avec CE préambule (ci-dessus + ci-dessous), puis appelle mem_workspaces :
-   ta carte = orgs (→ ton rôle → KB) + "shared" (KB partagées hors tes orgs) +
-   "pinned" (KB publiques d'autres orgs que tu as épinglées) + ta KB par défaut ("default").
-2. Pour TROUVER une info, préfère mem_search(workspace:"*") — il cherche dans TOUT ton
-   univers (orgs + shared + pinned) — plutôt que de parcourir l'arbo à la main.
-3. Tu veux suivre une KB publique d'une autre org ? mem_pin_workspace({workspace}) : elle
-   rejoint "pinned" et le périmètre de recherche. mem_unpin_workspace pour l'enlever.
-4. Ambigu ? Fixe la KB par défaut : mem_use_workspace({workspace}) (persistée, ≠ épingle).
-   Les verbes à "workspace" peuvent l'omettre → KB par défaut ; un "workspace" explicite prime.
-5. Les réponses échoent "workspace" ET "org" : VÉRIFIE-les, et annonce à l'utilisateur où tu
-   lis/écris (surtout avant une écriture). En cas de doute, demande-lui.
-6. Créer : mem_create_workspace exige "org" (choisis-la dans mem_workspaces ; mem_orgs ne
-   sert qu'au détail des membres).
+GETTING STARTED (important — the server is stateless):
+1. Orient yourself with THIS preamble (above + below), then call mem_workspaces:
+   your map = orgs (→ your role → KB) + "shared" (KB shared with you outside your orgs) +
+   "pinned" (public KB from other orgs that you pinned) + your default KB ("default").
+2. To FIND information, prefer mem_search(workspace:"*") — it searches across your WHOLE
+   universe (orgs + shared + pinned) — rather than walking the tree by hand.
+3. Want to follow a public KB from another org? mem_pin_workspace({workspace}): it
+   joins "pinned" and the search scope. mem_unpin_workspace to remove it.
+4. Ambiguous? Set the default KB: mem_use_workspace({workspace}) (persisted, ≠ pin).
+   Verbs taking "workspace" may omit it → default KB; an explicit "workspace" takes precedence.
+5. Responses echo "workspace" AND "org": CHECK them, and tell the user where you
+   read/write (especially before a write). When in doubt, ask.
+6. Creating: mem_create_workspace requires "org" (pick it from mem_workspaces; mem_orgs is
+   only for member detail).
 
-PROTOCOLE doctrine-first : sur une KB ciblée, mem_doctrine (préambule + arbre + conventions)
-AVANT tout drill. Cible 2-3 sections, puis mem_section / mem_document / mem_block, ou
-mem_search (hybride : mots exacts + paraphrases). Pour LIRE/répondre, ne charge jamais
-toute la base (cible). Pour ÉCRIRE, c'est l'inverse — cf. CHARGER AVANT D'ÉCRIRE.
+doctrine-first PROTOCOL: on a targeted KB, mem_doctrine (preamble + tree + conventions)
+BEFORE any drill. Target 2-3 sections, then mem_section / mem_document / mem_block, or
+mem_search (hybrid: exact words + paraphrases). To READ/answer, never load
+the whole base (target). To WRITE, it's the opposite — see LOAD BEFORE WRITING.
 
-ROUTAGE recherche vs énumération : mem_search est top-k, JAMAIS exhaustif. Pour
-« tout / lesquels / combien / quoi de neuf depuis » → mem_list / mem_count
-(déterministes, recall 100 %) et mem_revisions({since}) pour le delta de session.
+search vs enumeration ROUTING: mem_search is top-k, NEVER exhaustive. For
+"all / which ones / how many / what's new since" → mem_list / mem_count
+(deterministic, 100 % recall) and mem_revisions({since}) for the session delta.
 
-ÉCRITURE : réservée aux rôles admin/curator de l'org. Ne mute jamais en aveugle —
-propose via mem_stage_changes (→ revue humaine), puis mem_apply_ingestion. Les
-contradictions ne sont jamais auto-appliquées.
+WRITING: reserved for the org's admin/curator roles. Never mutate blindly —
+propose via mem_stage_changes (→ human review), then mem_apply_ingestion.
+Contradictions are never auto-applied.
 
-CHARGER AVANT D'ÉCRIRE : sur une KB de taille raisonnable, appelle mem_load(workspace)
-AVANT de proposer un mem_stage_changes — tu obtiens tout le contenu (+ un loadToken à
-repasser à mem_stage_changes). Ça t'évite les doublons, te fait placer le bloc au bon
-endroit, et te donne les blockId pour relier. Proposer sans charger est signalé (champ
-loadGate dans la réponse).
+LOAD BEFORE WRITING: on a reasonably sized KB, call mem_load(workspace)
+BEFORE proposing a mem_stage_changes — you get all the content (+ a loadToken to
+pass back to mem_stage_changes). It saves you from duplicates, lets you place the block in the
+right spot, and gives you the blockId values to link. Proposing without loading is flagged (loadGate
+field in the response).
 
-LIENS (graphe) : quand le contenu chargé te fait voir une relation logique entre deux
-blocs — surtout CONTRADICTS (deux faits s'opposent), SUPERSEDES (l'un périme l'autre),
-DEPENDS_ON (l'un suppose l'autre) — pose le lien (op link_blocks dans ton
-mem_stage_changes) : les IDs sont déjà sous tes yeux. Ne spamme pas RELATED (la recherche
-couvre déjà l'adjacence de sujet) — vise ce qu'un futur lecteur DOIT voir. Explore
-l'existant avec mem_neighborhood avant de modifier un bloc très lié.
+LINKS (graph): when the loaded content makes you see a logical relation between two
+blocks — especially CONTRADICTS (two facts oppose each other), SUPERSEDES (one obsoletes the other),
+DEPENDS_ON (one presupposes the other) — set the link (op link_blocks in your
+mem_stage_changes): the IDs are already in front of you. Don't spam RELATED (search
+already covers topic adjacency) — aim for what a future reader MUST see. Explore
+the existing graph with mem_neighborhood before modifying a heavily linked block.
 
-FEEDBACK (quasi obligatoire) : dès que Memento te surprend — erreur inattendue,
-recherche qui rate un contenu qui devrait exister, verbe/capacité manquant,
-paramètre ambigu, description trompeuse — signale-le via mem_log_usage AVANT de
-contourner. Une ligne suffit ; ça n'écrit rien dans la KB et ne bloque jamais
-ton travail. C'est ainsi que l'outil s'améliore.`;
+FEEDBACK (near-mandatory): whenever Memento surprises you — unexpected error,
+a search that misses content that should exist, a missing verb/capability,
+an ambiguous parameter, a misleading description — report it via mem_log_usage BEFORE
+working around it. One line is enough; it writes nothing to the KB and never blocks
+your work. This is how the tool improves.`;
 
 const json = (data: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(data) }] });
 const idOrPath = { id: z.string().optional(), path: z.string().optional() };
 
-// Bornes anti-DoS sur les entrées d'écriture (taille de contenu + cardinalité des
-// batchs) : l'isolate Edge a une mémoire limitée et la KB peut stocker du contenu
-// volumineux. Le SDK MCP rejette tôt (avant tout I/O) ce qui dépasse.
-const MAX_CONTENT = 200_000; // contenu d'un bloc / markdown d'un document
-const MAX_TEXT = 20_000;     // champs texte courts (préambule mis à part : long)
-const MAX_BATCH = 500;       // items d'un tableau d'ids / de changes
+// Anti-DoS bounds on write inputs (content size + batch cardinality):
+// the Edge isolate has limited memory and the KB can store bulky content.
+// The MCP SDK rejects oversized input early (before any I/O).
+const MAX_CONTENT = 200_000; // a block's content / a document's markdown
+const MAX_TEXT = 20_000;     // short text fields (the preamble aside: long)
+const MAX_BATCH = 500;       // items in an array of ids / of changes
 const longStr = z.string().max(MAX_CONTENT);
 const textStr = z.string().max(MAX_TEXT);
 
-/** Enrobe un handler : traduit un refus d'accès en résultat d'erreur lisible.
- *  `args` est typé `any` : le SDK valide déjà la forme à l'exécution via le inputSchema Zod. */
+/** Wraps a handler: translates an access denial into a readable error result.
+ *  `args` is typed `any`: the SDK already validates the shape at runtime via the Zod inputSchema. */
 function guarded(fn: (args: any) => Promise<any>) {
   return async (args: any) => {
     try {
       return await fn(args);
     } catch (e) {
       if (e instanceof AccessError) {
-        return { content: [{ type: "text" as const, text: `Accès refusé : ${e.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Access denied: ${e.message}` }], isError: true };
       }
       if (e instanceof RateLimitError) {
         return { content: [{ type: "text" as const, text: e.message }], isError: true };
       }
-      // On ne propage jamais l'erreur brute (fuite de schéma DB / système externe) :
-      // détail loggé côté serveur, message sûr renvoyé à l'agent.
-      console.error("[mcp] verbe échec:", e);
-      return { content: [{ type: "text" as const, text: `Erreur : ${safeErrorMessage(e)}` }], isError: true };
+      // We never propagate the raw error (DB schema / external system leak):
+      // detail logged server-side, safe message returned to the agent.
+      console.error("[mcp] verb failed:", e);
+      return { content: [{ type: "text" as const, text: `Error: ${safeErrorMessage(e)}` }], isError: true };
     }
   };
 }
 
-/** Construit un serveur MCP frais (un par requête en mode stateless), scopé au user `sub`. */
+/** Builds a fresh MCP server (one per request in stateless mode), scoped to user `sub`. */
 function buildServer(sub: string): McpServer {
   const server = new McpServer({ name: "memento", version: "0.1.0" }, { instructions: INSTRUCTIONS });
 
-  // Journal des appels (otomata-calllog, table tool_calls) : registerTool est
-  // intercepté UNE fois — tous les verbes passent par withCallLog sans toucher
-  // aux ~50 déclarations.
+  // Call log (otomata-calllog, tool_calls table): registerTool is
+  // intercepted ONCE — every verb goes through withCallLog without touching
+  // the ~50 declarations.
   const register = server.registerTool.bind(server);
   // deno-lint-ignore no-explicit-any
   server.registerTool = ((name: string, cfg: any, handler: any) =>
@@ -169,48 +169,48 @@ function buildServer(sub: string): McpServer {
 
   server.registerTool("mem_workspaces", {
     description:
-      "TA CARTE DE CONTEXTE — point de départ. Topologie complète : tes orgs (tenants, dont ton org perso `personal:true`) → leurs KB visibles avec TON rôle effectif et `visibility` (org|private|public), " +
-      "+ `shared` (KB partagées avec toi hors de tes orgs), + `pinned` (KB publiques d'autres orgs que tu as épinglées — mem_pin_workspace), + ta KB par défaut (`default`). " +
-      "Sers-t'en pour choisir la cible ; change le défaut avec mem_use_workspace. Pour TROUVER une info plutôt que parcourir : mem_search(workspace:\"*\").",
+      "YOUR CONTEXT MAP — the starting point. Full topology: your orgs (tenants, including your personal org `personal:true`) → their visible KB with YOUR effective role and `visibility` (org|private|public), " +
+      "+ `shared` (KB shared with you outside your orgs), + `pinned` (public KB from other orgs that you pinned — mem_pin_workspace), + your default KB (`default`). " +
+      "Use it to pick the target; change the default with mem_use_workspace. To FIND information rather than browse: mem_search(workspace:\"*\").",
     inputSchema: {},
   }, guarded(async () => json(await contextMap(sub))));
 
   server.registerTool("mem_use_workspace", {
     description:
-      "Fixe ta KB par défaut (persistée). Les verbes qui acceptent `workspace` l'utiliseront quand tu l'omets. " +
-      "Un `workspace` explicite reste toujours prioritaire. À appeler en début de session pour cadrer le contexte.",
-    inputSchema: { workspace: z.string().describe("slug de la KB, ex: demo") },
+      "Sets your default KB (persisted). Verbs that accept `workspace` will use it when you omit it. " +
+      "An explicit `workspace` always takes precedence. Call it at the start of a session to frame the context.",
+    inputSchema: { workspace: z.string().describe("KB slug, e.g. demo") },
   }, guarded(async ({ workspace }) => {
-    // Vérifie l'accès AVANT de fixer le défaut : on ne confirme pas l'existence
-    // d'une KB d'un autre tenant et on n'en écho pas l'org.
+    // Check access BEFORE setting the default: we don't confirm the existence
+    // of a KB from another tenant and we don't echo its org.
     await assertAccess(sub, { workspace });
     const w = await setDefaultWorkspace(sub, workspace);
     const { org } = await wsContext(sub, w.slug);
-    return json({ default: w.slug, name: w.name, org, message: `KB par défaut : ${w.name} (${w.slug}, org ${org})` });
+    return json({ default: w.slug, name: w.name, org, message: `Default KB: ${w.name} (${w.slug}, org ${org})` });
   }));
 
   server.registerTool("mem_pin_workspace", {
     description:
-      "Épingle une KB dans ton univers (typiquement une KB publique d'une autre org) : elle apparaît dans `pinned` de mem_workspaces " +
-      "et entre dans le périmètre de mem_search(workspace:\"*\"). Distinct de la KB par défaut (mem_use_workspace). Idempotent.",
-    inputSchema: { workspace: z.string().describe("slug de la KB à épingler") },
+      "Pins a KB in your universe (typically a public KB from another org): it appears in mem_workspaces' `pinned` " +
+      "and enters the scope of mem_search(workspace:\"*\"). Distinct from the default KB (mem_use_workspace). Idempotent.",
+    inputSchema: { workspace: z.string().describe("slug of the KB to pin") },
   }, guarded(async ({ workspace }) => {
-    await assertAccess(sub, { workspace }); // lisible (les KB publiques le sont par tous)
+    await assertAccess(sub, { workspace }); // readable (public KB are readable by everyone)
     const w = await pinWorkspace(sub, workspace);
-    return json({ pinned: w.slug, name: w.name, message: `KB épinglée : ${w.name} (${w.slug})` });
+    return json({ pinned: w.slug, name: w.name, message: `KB pinned: ${w.name} (${w.slug})` });
   }));
 
   server.registerTool("mem_unpin_workspace", {
-    description: "Retire une KB de tes épinglées (la sort de `pinned` et du périmètre de recherche globale).",
-    inputSchema: { workspace: z.string().describe("slug de la KB à désépingler") },
+    description: "Removes a KB from your pinned ones (takes it out of `pinned` and the global search scope).",
+    inputSchema: { workspace: z.string().describe("slug of the KB to unpin") },
   }, guarded(async ({ workspace }) => {
     return json({ unpinned: (await unpinWorkspace(sub, workspace)).slug });
   }));
 
   server.registerTool("mem_set_doctrine", {
     description:
-      "Écrit le préambule de doctrine (méta-instructions, markdown) d'une KB — la boussole lue par mem_doctrine. " +
-      "À poser sur une KB neuve (sinon sa carte est vide). Réservé admin/curator. `workspace` optionnel = KB par défaut.",
+      "Writes a KB's doctrine preamble (meta-instructions, markdown) — the compass read by mem_doctrine. " +
+      "Set it on a new KB (otherwise its map is empty). Admin/curator only. `workspace` optional = default KB.",
     inputSchema: { workspace: z.string().optional(), preamble: longStr },
   }, guarded(async (args) => {
     const { workspace: ws, org } = await wsContext(sub, args.workspace);
@@ -219,7 +219,7 @@ function buildServer(sub: string): McpServer {
   }));
 
   server.registerTool("mem_update_workspace", {
-    description: "Modifie les métadonnées d'une KB (nom et/ou résumé). Le slug reste stable. Réservé admin/curator.",
+    description: "Edits a KB's metadata (name and/or summary). The slug stays stable. Admin/curator only.",
     inputSchema: { workspace: z.string().optional(), name: z.string().optional(), summary: z.string().optional() },
   }, guarded(async (args) => {
     const { workspace: ws, org } = await wsContext(sub, args.workspace);
@@ -228,7 +228,7 @@ function buildServer(sub: string): McpServer {
   }));
 
   server.registerTool("mem_archive_workspace", {
-    description: "Archive (masque) une KB, ou la réactive (`archived:false`). Réversible. Réservé aux admins de l'org propriétaire.",
+    description: "Archives (hides) a KB, or reactivates it (`archived:false`). Reversible. Reserved for admins of the owning org.",
     inputSchema: { workspace: z.string().optional(), archived: z.boolean().optional() },
   }, guarded(async (args) => {
     const { workspace: ws, org } = await wsContext(sub, args.workspace);
@@ -238,9 +238,9 @@ function buildServer(sub: string): McpServer {
 
   server.registerTool("mem_grants", {
     description:
-      "Le « qui a accès » d'une KB : visibility (org|private), grants individuels (email, rôle, pending) " +
-      "ET accès hérités de l'org (`inherited`, si visibility=org). Réservé aux admins de l'org propriétaire.",
-    inputSchema: { workspace: z.string().optional().describe("slug de la KB ; omis = KB par défaut") },
+      "A KB's \"who has access\": visibility (org|private), individual grants (email, role, pending) " +
+      "AND accesses inherited from the org (`inherited`, if visibility=org). Reserved for admins of the owning org.",
+    inputSchema: { workspace: z.string().optional().describe("KB slug; omitted = default KB") },
   }, guarded(async (args) => {
     const { workspace: ws } = await wsContext(sub, args.workspace);
     return json(await listGrants(sub, { workspace: ws }));
@@ -248,14 +248,14 @@ function buildServer(sub: string): McpServer {
 
   server.registerTool("mem_grant", {
     description:
-      "Donne (ou met à jour) l'accès d'une personne à UNE KB, par email — y compris un EXTERNE à l'org (guest) : " +
-      "compte inexistant → provisionné + email d'invitation. Rôle : member (lecture) | curator (écriture) — " +
-      "jamais la gouvernance (partager/transférer restent à l'org-admin). Réservé aux admins de l'org propriétaire. " +
-      "Pour ajouter quelqu'un à TOUTES les KB d'une org → invitation d'org (mem_orgs).",
+      "Grants (or updates) a person's access to ONE KB, by email — including someone EXTERNAL to the org (guest): " +
+      "nonexistent account → provisioned + invitation email. Role: member (read) | curator (write) — " +
+      "never governance (share/transfer stay with the org-admin). Reserved for admins of the owning org. " +
+      "To add someone to ALL of an org's KB → org invitation (mem_orgs).",
     inputSchema: {
-      workspace: z.string().optional().describe("slug de la KB ; omis = KB par défaut"),
-      email: z.string().describe("email de la personne"),
-      role: z.enum(["curator", "member"]).optional().describe("défaut member (lecture)"),
+      workspace: z.string().optional().describe("KB slug; omitted = default KB"),
+      email: z.string().describe("the person's email"),
+      role: z.enum(["curator", "member"]).optional().describe("default member (read)"),
     },
   }, guarded(async (args) => {
     const { workspace: ws, org } = await wsContext(sub, args.workspace);
@@ -264,10 +264,10 @@ function buildServer(sub: string): McpServer {
 
   server.registerTool("mem_revoke_grant", {
     description:
-      "Retire un accès explicite à une KB (par userId, cf. mem_grants). Réservé aux admins de l'org propriétaire.",
+      "Removes an explicit access to a KB (by userId, cf. mem_grants). Reserved for admins of the owning org.",
     inputSchema: {
-      workspace: z.string().optional().describe("slug de la KB ; omis = KB par défaut"),
-      userId: z.string().describe("sub du user (cf. mem_grants)"),
+      workspace: z.string().optional().describe("KB slug; omitted = default KB"),
+      userId: z.string().describe("the user's sub (cf. mem_grants)"),
     },
   }, guarded(async (args) => {
     const { workspace: ws, org } = await wsContext(sub, args.workspace);
@@ -276,12 +276,12 @@ function buildServer(sub: string): McpServer {
 
   server.registerTool("mem_set_visibility", {
     description:
-      "Change le périmètre d'une KB : `org` (tous les membres de l'org, rôle d'org par défaut), `private` " +
-      "(grants explicites seuls — un grant curator t'est posé au passage pour que tu continues de la lire), " +
-      "ou `public` (lisible et cherchable par TOUS, anonyme inclus : galerie publique + mem_public_search ; " +
-      "ton org garde l'écriture). Réservé aux admins de l'org propriétaire.",
+      "Changes a KB's scope: `org` (all org members, default org role), `private` " +
+      "(explicit grants only — a curator grant is set for you along the way so you keep reading it), " +
+      "or `public` (readable and searchable by EVERYONE, anonymous included: public gallery + mem_public_search; " +
+      "your org keeps write). Reserved for admins of the owning org.",
     inputSchema: {
-      workspace: z.string().optional().describe("slug de la KB ; omis = KB par défaut"),
+      workspace: z.string().optional().describe("KB slug; omitted = default KB"),
       visibility: z.enum(["org", "private", "public"]),
     },
   }, guarded(async (args) => {
@@ -291,42 +291,42 @@ function buildServer(sub: string): McpServer {
 
   server.registerTool("mem_orgs", {
     description:
-      "Détail de tes organisations : MEMBRES (email, rôle, pending) en plus des KB. " +
-      "Pour simplement choisir une org/KB cible, mem_workspaces suffit (topologie légère).",
+      "Detail of your organizations: MEMBERS (email, role, pending) in addition to the KB. " +
+      "To simply pick a target org/KB, mem_workspaces is enough (lightweight topology).",
     inputSchema: {},
   }, guarded(async () => json(await listMyOrgs(sub))));
 
   server.registerTool("mem_accounts", {
     description:
-      "VUE PLATEFORME (réservée aux opérateurs MEMENTO_PLATFORM_ADMINS) : tous les comptes auth — " +
-      "email, date de création, dernier login, provider, appartenances aux orgs (null = compte sans org, " +
-      "le signup est ouvert). Pour les membres d'une org précise, mem_orgs suffit.",
+      "PLATFORM VIEW (reserved for MEMENTO_PLATFORM_ADMINS operators): all auth accounts — " +
+      "email, creation date, last login, provider, org memberships (null = account with no org, " +
+      "signup is open). For the members of a specific org, mem_orgs is enough.",
     inputSchema: {},
   }, guarded(async () => json(await listAccounts(sub))));
 
   server.registerTool("mem_create_org", {
     description:
-      "Crée une organisation = un périmètre de partage (mission/client, perso) ; tu en deviens admin. " +
-      "Enchaîne avec mem_create_workspace({org}) pour y créer des KB. Slug dérivé du nom sauf si fourni.",
+      "Creates an organization = a sharing scope (mission/client, personal); you become its admin. " +
+      "Chain with mem_create_workspace({org}) to create KB in it. Slug derived from the name unless provided.",
     inputSchema: {
-      name: z.string().describe("nom lisible, ex: Demo KB"),
-      slug: z.string().optional().describe("slug souhaité ; défaut = dérivé du nom"),
+      name: z.string().describe("human-readable name, e.g. Demo KB"),
+      slug: z.string().optional().describe("desired slug; default = derived from the name"),
     },
   }, guarded(async (args) => json(await createOrg(sub, args))));
 
   server.registerTool("mem_create_workspace", {
     description:
-      "Crée une KB (workspace) vide rattachée à une org dont tu es admin (ton org perso marche toujours). " +
-      "`visibility` : org (défaut, tous les membres de l'org), private (toi seul, puis mem_grant), " +
-      "ou public (lisible/cherchable par tous — bascule plutôt après coup via mem_set_visibility). " +
-      "Le slug est dérivé du nom (unique tous orgs confondus) sauf si fourni. " +
-      "Enchaîne avec mem_set_doctrine pour poser la boussole, sinon la carte est vide.",
+      "Creates an empty KB (workspace) attached to an org you're an admin of (your personal org always works). " +
+      "`visibility`: org (default, all org members), private (you only, then mem_grant), " +
+      "or public (readable/searchable by everyone — better to switch afterward via mem_set_visibility). " +
+      "The slug is derived from the name (unique across all orgs) unless provided. " +
+      "Chain with mem_set_doctrine to set the compass, otherwise the map is empty.",
     inputSchema: {
-      org: z.string().describe("slug de l'org propriétaire, ex: otomata"),
-      name: z.string().describe("nom lisible de la KB"),
-      summary: z.string().optional().describe("résumé court (objet de la KB)"),
-      slug: z.string().optional().describe("slug souhaité ; défaut = dérivé du nom"),
-      visibility: z.enum(["org", "private", "public"]).optional().describe("défaut org"),
+      org: z.string().describe("slug of the owning org, e.g. otomata"),
+      name: z.string().describe("human-readable name of the KB"),
+      summary: z.string().optional().describe("short summary (the KB's purpose)"),
+      slug: z.string().optional().describe("desired slug; default = derived from the name"),
+      visibility: z.enum(["org", "private", "public"]).optional().describe("default org"),
     },
   }, guarded(async (args) =>
     json(await createWorkspace(sub, {
@@ -336,20 +336,20 @@ function buildServer(sub: string): McpServer {
 
   server.registerTool("mem_transfer_workspace", {
     description:
-      "Transfère une KB vers une autre org = change de TENANT (ex. promouvoir une KB de ton org perso vers " +
-      "l'org d'équipe). Le périmètre (visibility/grants) suit la KB ; le contenu ne bouge pas. Pour ajuster " +
-      "QUI voit la KB sans changer d'org → mem_grant/mem_set_visibility. " +
-      "Réservé aux admins des DEUX orgs (source et destination).",
+      "Transfers a KB to another org = changes TENANT (e.g. promote a KB from your personal org to " +
+      "the team org). The scope (visibility/grants) follows the KB; the content does not move. To adjust " +
+      "WHO sees the KB without changing org → mem_grant/mem_set_visibility. " +
+      "Reserved for admins of BOTH orgs (source and destination).",
     inputSchema: {
-      workspace: z.string().describe("slug de la KB à transférer"),
-      toOrg: z.string().describe("slug de l'org de destination"),
+      workspace: z.string().describe("slug of the KB to transfer"),
+      toOrg: z.string().describe("slug of the destination org"),
     },
   }, guarded(async (args) => json(await transferWorkspace(sub, args))));
 
   server.registerTool("mem_doctrine", {
     description:
-      "POINT D'ENTRÉE doctrine-first. Carte compacte d'une KB : préambule (méta-instructions), arbre des sections (titres + résumés + compteurs, SANS contenu) et conventions. À appeler en premier pour cibler 2-3 sections avant tout drill. `workspace` optionnel : par défaut, ta KB courante (cf. mem_use_workspace).",
-    inputSchema: { workspace: z.string().optional().describe("slug de la KB ; omis = KB par défaut") },
+      "doctrine-first ENTRY POINT. Compact map of a KB: preamble (meta-instructions), section tree (titles + summaries + counters, WITHOUT content) and conventions. Call it first to target 2-3 sections before any drill. `workspace` optional: defaults to your current KB (cf. mem_use_workspace).",
+    inputSchema: { workspace: z.string().optional().describe("KB slug; omitted = default KB") },
   }, guarded(async ({ workspace }) => {
     const { workspace: ws, org } = await wsContext(sub, workspace);
     await assertAccess(sub, { workspace: ws });
@@ -358,11 +358,11 @@ function buildServer(sub: string): McpServer {
 
   server.registerTool("mem_load", {
     description:
-      "Charge une KB EN ENTIER (tous les documents + le contenu de tous les blocs, ordonnés) — à appeler AVANT de proposer une écriture (mem_stage_changes) dans une KB de taille raisonnable. " +
-      "Te donne le contexte complet pour : éviter les doublons, placer ton bloc au bon endroit, et repérer les liens typés à poser (CONTRADICTS/SUPERSEDES/DEPENDS_ON). " +
-      "Renvoie un `loadToken` à repasser à mem_stage_changes (prouve que tu as chargé la version courante). " +
-      "Si la KB dépasse le seuil de taille (`loaded: false`), le chargement intégral n'est pas rendu : cible alors via mem_doctrine + mem_search/mem_list. `workspace` omis = KB par défaut.",
-    inputSchema: { workspace: z.string().optional().describe("slug de la KB ; omis = KB par défaut") },
+      "Loads a KB IN FULL (all documents + the content of all blocks, ordered) — call it BEFORE proposing a write (mem_stage_changes) in a reasonably sized KB. " +
+      "Gives you the full context to: avoid duplicates, place your block in the right spot, and spot the typed links to set (CONTRADICTS/SUPERSEDES/DEPENDS_ON). " +
+      "Returns a `loadToken` to pass back to mem_stage_changes (proves you loaded the current version). " +
+      "If the KB exceeds the size threshold (`loaded: false`), the full load is not rendered: target instead via mem_doctrine + mem_search/mem_list. `workspace` omitted = default KB.",
+    inputSchema: { workspace: z.string().optional().describe("KB slug; omitted = default KB") },
   }, guarded(async ({ workspace }) => {
     const { workspace: ws, org } = await wsContext(sub, workspace);
     await assertAccess(sub, { workspace: ws });
@@ -372,7 +372,7 @@ function buildServer(sub: string): McpServer {
 
   server.registerTool("mem_section", {
     description:
-      "Déplie une zone de l'arbre : sous-sections + documents (titre, résumé, statut, compteurs). Ne rend PAS les blocs. Par `id` ou `path`.",
+      "Unfolds a zone of the tree: sub-sections + documents (title, summary, status, counters). Does NOT render blocks. By `id` or `path`.",
     inputSchema: idOrPath,
   }, guarded(async (args) => {
     await assertAccess(sub, args.path ? { path: args.path } : { id: args.id, kind: "section" });
@@ -381,8 +381,8 @@ function buildServer(sub: string): McpServer {
 
   server.registerTool("mem_document", {
     description:
-      "Rend un document : blocs ordonnés (id, type, contenu) + sources, liens et commentaires par bloc. Par `id` ou `path`. " +
-      "`document.url` = LE lien viewer à donner à l'humain (bloc précis : y suffixer `?block=<id>`) — ne jamais fabriquer d'URL soi-même.",
+      "Renders a document: ordered blocks (id, type, content) + sources, links and comments per block. By `id` or `path`. " +
+      "`document.url` = THE viewer link to give the human (specific block: append `?block=<id>`) — never craft a URL yourself.",
     inputSchema: idOrPath,
   }, guarded(async (args) => {
     await assertAccess(sub, args.path ? { path: args.path } : { id: args.id, kind: "document" });
@@ -391,8 +391,8 @@ function buildServer(sub: string): McpServer {
 
   server.registerTool("mem_block", {
     description:
-      "Rend un bloc isolé avec ses sources, liens (entrants + sortants) et commentaires. Pour inspecter un hit de recherche. " +
-      "`url` = LE lien viewer à donner à l'humain — ne jamais fabriquer d'URL soi-même.",
+      "Renders an isolated block with its sources, links (incoming + outgoing) and comments. To inspect a search hit. " +
+      "`url` = THE viewer link to give the human — never craft a URL yourself.",
     inputSchema: { id: z.string() },
   }, guarded(async ({ id }) => {
     await assertAccess(sub, { id, kind: "block" });
@@ -401,9 +401,9 @@ function buildServer(sub: string): McpServer {
 
   server.registerTool("mem_neighborhood", {
     description:
-      "Traverse le graphe de liens autour d'un bloc : sous-graphe (nœuds = blocs avec extrait + document/section, arêtes = liens typés) jusqu'à `depth` sauts (1-3, défaut 1). " +
-      "Filtres : `relations` (REFERENCES|DEPENDS_ON|CONTRADICTS|SUPERSEDES|RELATED), `direction` out|in|both (défaut both). " +
-      "Usages : voir ce qui dépend d'un principe avant de le modifier, suivre une chaîne de contradictions, explorer le voisinage d'un hit. Forer ensuite avec mem_block.",
+      "Traverses the link graph around a block: subgraph (nodes = blocks with excerpt + document/section, edges = typed links) up to `depth` hops (1-3, default 1). " +
+      "Filters: `relations` (REFERENCES|DEPENDS_ON|CONTRADICTS|SUPERSEDES|RELATED), `direction` out|in|both (default both). " +
+      "Uses: see what depends on a principle before modifying it, follow a chain of contradictions, explore the neighborhood of a hit. Drill in afterward with mem_block.",
     inputSchema: {
       blockId: z.string(),
       depth: z.number().int().min(1).max(3).optional(),
@@ -411,32 +411,32 @@ function buildServer(sub: string): McpServer {
       direction: z.enum(["out", "in", "both"]).optional(),
     },
   }, guarded(async (args) => {
-    // Un lien ne traverse jamais deux workspaces (invariant §4) : l'accès au bloc
-    // racine couvre tout le sous-graphe.
+    // A link never crosses two workspaces (invariant §4): access to the root
+    // block covers the whole subgraph.
     await assertAccess(sub, { id: args.blockId, kind: "block" });
     return json(await neighborhood(args));
   }));
 
   server.registerTool("mem_search", {
     description:
-      "LA recherche — hybride par défaut : full-text français (mots exacts) + sémantique (paraphrases, kNN embeddings), fusion RRF. Chaque hit : blockId, matchedBy, snippet/excerpt, doc, `url` (LE lien viewer à donner à l'humain — ne jamais fabriquer d'URL), {workspace, org} + métadonnées de jugement (docStatus, verifiedAt, updatedAt, sourceCount, superseded/contradicted). " +
-      "Les blocs de documents DEPRECATED sont déclassés (pas exclus) — `includeDeprecated` pour un classement pur. `lexicalTotal` = vrai nombre de correspondants, `hasMore` indique s'il faut élargir. ATTENTION : top-k, jamais exhaustif — pour « tout / combien / depuis » → mem_list/mem_count. " +
-      "`workspace` omis = KB par défaut ; `\"*\"` = TOUT ton univers — tes orgs + KB partagées + KB publiques épinglées (« où ai-je noté ça ? » — `sectionPath` y est refusé). `likeBlockId` (à la place de `q`) = blocs proches d'un bloc-ancre (dédup, suggestions de liens, ciblage d'ingestion). " +
-      "`mode` lexical|semantic pour forcer un seul régime (rarement utile). Si l'embedding est indisponible, dégrade en lexical et le signale (`modes`). Drill ensuite avec mem_block.",
+      "THE search — hybrid by default: French full-text (exact words) + semantic (paraphrases, kNN embeddings), RRF fusion. Each hit: blockId, matchedBy, snippet/excerpt, doc, `url` (THE viewer link to give the human — never craft a URL), {workspace, org} + judgment metadata (docStatus, verifiedAt, updatedAt, sourceCount, superseded/contradicted). " +
+      "Blocks of DEPRECATED documents are demoted (not excluded) — `includeDeprecated` for a pure ranking. `lexicalTotal` = true number of matches, `hasMore` indicates whether to broaden. CAUTION: top-k, never exhaustive — for \"all / how many / since\" → mem_list/mem_count. " +
+      "`workspace` omitted = default KB; `\"*\"` = your WHOLE universe — your orgs + shared KB + pinned public KB (\"where did I note that?\" — `sectionPath` is refused there). `likeBlockId` (instead of `q`) = blocks close to an anchor block (dedup, link suggestions, ingestion targeting). " +
+      "`mode` lexical|semantic to force a single regime (rarely useful). If embedding is unavailable, degrades to lexical and flags it (`modes`). Drill in afterward with mem_block.",
     inputSchema: {
-      q: z.string().optional().describe("requête texte (mots-clés ou phrase — les deux régimes s'en nourrissent)"),
-      likeBlockId: z.string().optional().describe("bloc-ancre : renvoie les blocs sémantiquement proches (exclut q)"),
-      workspace: z.string().optional().describe('slug de KB ; omis = KB par défaut ; "*" = toutes tes KB'),
+      q: z.string().optional().describe("text query (keywords or phrase — both regimes feed on it)"),
+      likeBlockId: z.string().optional().describe("anchor block: returns the semantically close blocks (excludes q)"),
+      workspace: z.string().optional().describe('KB slug; omitted = default KB; "*" = all your KB'),
       mode: z.enum(["hybrid", "lexical", "semantic"]).optional(),
       blockType: z.string().optional(),
       sectionPath: z.string().optional(),
       docKind: z.string().optional(),
-      includeDeprecated: z.boolean().optional().describe("true = ne pas déclasser les blocs de documents DEPRECATED"),
+      includeDeprecated: z.boolean().optional().describe("true = don't demote blocks of DEPRECATED documents"),
       maxHits: z.number().int().min(1).max(100).optional(),
     },
   }, guarded(async (args) => {
-    // Mode bloc-ancre : sémantique pur, scopé à la KB du bloc — mêmes filtres
-    // que la recherche (aucun filtre accepté-puis-ignoré).
+    // Anchor-block mode: pure semantic, scoped to the block's KB — same filters
+    // as search (no filter accepted-then-ignored).
     if (args.likeBlockId) {
       await assertAccess(sub, { id: args.likeBlockId, kind: "block" });
       const wsId = await resolveWorkspaceId({ id: args.likeBlockId, kind: "block" });
@@ -457,13 +457,13 @@ function buildServer(sub: string): McpServer {
         hits: similar.hits.map((h) => ({ ...h, url: docUrl(ws.slug, h.document.id, h.blockId) })),
       });
     }
-    if (!args.q?.trim()) throw new Error("`q` ou `likeBlockId` requis");
+    if (!args.q?.trim()) throw new Error("`q` or `likeBlockId` required");
 
-    // Cible : une KB (explicite/défaut) ou toutes ("*").
+    // Target: one KB (explicit/default) or all ("*").
     let targets: { id: string; slug: string; org: string }[];
     let scope: Record<string, unknown>;
     if (args.workspace === "*") {
-      await assertWithinLimit(sub, "search_global"); // fan-out coûteux (full-text + kNN sur N KB)
+      await assertWithinLimit(sub, "search_global"); // costly fan-out (full-text + kNN over N KB)
       targets = await accessibleWorkspaceRefs(sub);
       scope = { scope: "all" };
     } else {
@@ -478,39 +478,39 @@ function buildServer(sub: string): McpServer {
 
   server.registerTool("mem_public_search", {
     description:
-      "RECHERCHE PUBLIQUE — full-text sur TOUTES les KB publiques de Memento (pas seulement les tiennes), " +
-      "sans appartenance requise. Pour découvrir du savoir partagé ouvertement par d'autres orgs. " +
-      "Chaque hit est étiqueté {workspace, org} + `url` viewer ; épingle ensuite une KB trouvée via " +
-      "mem_use_workspace, ou lis-la par slug (mem_doctrine/mem_document). Lexical seul (déterministe).",
+      "PUBLIC SEARCH — full-text over ALL of Memento's public KB (not just yours), " +
+      "with no membership required. To discover knowledge openly shared by other orgs. " +
+      "Each hit is labeled {workspace, org} + viewer `url`; then pin a found KB via " +
+      "mem_use_workspace, or read it by slug (mem_doctrine/mem_document). Lexical only (deterministic).",
     inputSchema: {
-      q: z.string().describe("requête texte (mots-clés ou phrase)"),
+      q: z.string().describe("text query (keywords or phrase)"),
       blockType: z.string().optional(),
       docKind: z.string().optional(),
       maxHits: z.number().int().min(1).max(100).optional(),
     },
   }, guarded(async (args) => {
-    if (!args.q?.trim()) throw new Error("`q` requis");
+    if (!args.q?.trim()) throw new Error("`q` required");
     await assertWithinLimit(sub, "search_public");
     return json({ scope: "public", ...(await searchPublic(args)) });
   }));
 
   server.registerTool("mem_list", {
     description:
-      "Énumération DÉTERMINISTE — recall 100 %, le complément de mem_search (top-k). Pour « liste tout », « lesquels », « qu'est-ce qui a changé depuis » → mem_list ; pour « combien » → mem_count. JAMAIS mem_search pour de l'exhaustif. " +
-      "`kind` blocks (défaut) | documents. Lignes compactes (id, type, excerpt 100c, docPath, statuts, dates, compteurs) + `totalCount` (vrai nombre de correspondants), `hasMore`, `cursor` (keyset — repasse-le tel quel pour la page suivante). Tri : updated_at décroissant (le plus récent d'abord). " +
-      "Filtres combinables : blockType, docStatus, verified, hasSource, sectionPath, docKind, updatedSince/updatedUntil. Ex. « toutes les REGLE non vérifiées » = {blockType:\"REGLE\", verified:false}. Drill ensuite avec mem_block/mem_document.",
+      "DETERMINISTIC enumeration — 100 % recall, the complement to mem_search (top-k). For \"list everything\", \"which ones\", \"what changed since\" → mem_list; for \"how many\" → mem_count. NEVER mem_search for exhaustive needs. " +
+      "`kind` blocks (default) | documents. Compact rows (id, type, excerpt 100c, docPath, statuses, dates, counters) + `totalCount` (true number of matches), `hasMore`, `cursor` (keyset — pass it back as-is for the next page). Sort: updated_at descending (most recent first). " +
+      "Combinable filters: blockType, docStatus, verified, hasSource, sectionPath, docKind, updatedSince/updatedUntil. E.g. \"all unverified REGLE\" = {blockType:\"REGLE\", verified:false}. Drill in afterward with mem_block/mem_document.",
     inputSchema: {
-      workspace: z.string().optional().describe("slug de KB ; omis = KB par défaut"),
+      workspace: z.string().optional().describe("KB slug; omitted = default KB"),
       kind: z.enum(["blocks", "documents"]).optional(),
       blockType: z.string().optional(),
       docStatus: z.enum(["ACTIVE", "DEPRECATED"]).optional(),
-      verified: z.boolean().optional().describe("true = vérifiés seulement, false = non vérifiés seulement"),
+      verified: z.boolean().optional().describe("true = verified only, false = unverified only"),
       hasSource: z.boolean().optional(),
       sectionPath: z.string().optional(),
       docKind: z.string().optional(),
-      updatedSince: z.string().optional().describe("ISO 8601 — ex. 2026-06-08T00:00:00Z"),
+      updatedSince: z.string().optional().describe("ISO 8601 — e.g. 2026-06-08T00:00:00Z"),
       updatedUntil: z.string().optional(),
-      cursor: z.string().optional().describe("curseur opaque renvoyé par la page précédente"),
+      cursor: z.string().optional().describe("opaque cursor returned by the previous page"),
       limit: z.number().int().min(1).max(200).optional(),
     },
   }, guarded(async (args) => {
@@ -522,10 +522,10 @@ function buildServer(sub: string): McpServer {
 
   server.registerTool("mem_count", {
     description:
-      "Compte/agrège SANS énumérer — mêmes filtres que mem_list, SQL pur, exact par construction. Pour « combien de blocs sans source », « répartition par type/section » → ce verbe, jamais mem_search. " +
-      "`groupBy` type|docStatus|section|docKind → ventilation triée par effectif (section = chemin slugifié).",
+      "Counts/aggregates WITHOUT enumerating — same filters as mem_list, pure SQL, exact by construction. For \"how many blocks without a source\", \"breakdown by type/section\" → this verb, never mem_search. " +
+      "`groupBy` type|docStatus|section|docKind → breakdown sorted by count (section = slugified path).",
     inputSchema: {
-      workspace: z.string().optional().describe("slug de KB ; omis = KB par défaut"),
+      workspace: z.string().optional().describe("KB slug; omitted = default KB"),
       kind: z.enum(["blocks", "documents"]).optional(),
       groupBy: z.enum(["type", "docStatus", "section", "docKind"]).optional(),
       blockType: z.string().optional(),
@@ -544,10 +544,10 @@ function buildServer(sub: string): McpServer {
     return json({ workspace: ws, org, ...(await countItems({ ...rest, workspace: ws })) });
   }));
 
-  // ── Commentaires (revue) ────────────────────────────────────────────────────
+  // ── Comments (review) ───────────────────────────────────────────────────────
   server.registerTool("mem_comment", {
     description:
-      "Annote un bloc/document/section. targetType ∈ BLOCK|DOCUMENT|SECTION. `authorKind` human|agent (défaut human).",
+      "Annotates a block/document/section. targetType ∈ BLOCK|DOCUMENT|SECTION. `authorKind` human|agent (default human).",
     inputSchema: {
       targetType: z.enum(CT), targetId: z.string(), body: z.string(),
       authorKind: z.string().optional(),
@@ -559,16 +559,16 @@ function buildServer(sub: string): McpServer {
   }));
 
   server.registerTool("mem_resolve_comment", {
-    description: "Marque un commentaire comme résolu (horodatage).",
+    description: "Marks a comment as resolved (timestamp).",
     inputSchema: { id: z.string() },
   }, guarded(async ({ id }) => {
     await assertAccess(sub, { id, kind: "comment" }, { write: true });
     return json(await resolveComment({ id }));
   }));
 
-  // ── Restructuration (Lot 4) — composite, atomique, dry_run ──────────────────
+  // ── Restructuring (Batch 4) — composite, atomic, dry_run ────────────────────
   server.registerTool("mem_create_section", {
-    description: "Crée une section (racine si pas de `parentId`). Profondeur d'arbre ≤ 3. `workspace` optionnel = KB par défaut.",
+    description: "Creates a section (root if no `parentId`). Tree depth ≤ 3. `workspace` optional = default KB.",
     inputSchema: {
       workspace: z.string().optional(), parentId: z.string().optional(),
       title: z.string(), summary: z.string().optional(), position: z.number().int().optional(),
@@ -581,7 +581,7 @@ function buildServer(sub: string): McpServer {
   }));
 
   server.registerTool("mem_rename_section", {
-    description: "Renomme une section (titre et/ou résumé). Le slug reste stable (les chemins ne cassent pas).",
+    description: "Renames a section (title and/or summary). The slug stays stable (paths don't break).",
     inputSchema: { id: z.string(), title: z.string().optional(), summary: z.string().optional() },
   }, guarded(async (args) => {
     await assertAccess(sub, { id: args.id, kind: "section" }, { write: true });
@@ -589,7 +589,7 @@ function buildServer(sub: string): McpServer {
   }));
 
   server.registerTool("mem_delete_section", {
-    description: "Supprime une section VIDE (ni documents, ni sous-sections). Sinon, déplacer/fusionner d'abord.",
+    description: "Deletes an EMPTY section (no documents, no sub-sections). Otherwise, move/merge first.",
     inputSchema: { id: z.string(), reason: z.string().optional() },
   }, guarded(async (args) => {
     await assertAccess(sub, { id: args.id, kind: "section" }, { write: true });
@@ -597,16 +597,16 @@ function buildServer(sub: string): McpServer {
   }));
 
   server.registerTool("mem_reorder", {
-    description: "Réordonne les enfants d'un parent : `orderedChildIds` = tous des sections (même parent) OU tous des documents (même section).",
+    description: "Reorders a parent's children: `orderedChildIds` = all sections (same parent) OR all documents (same section).",
     inputSchema: { parentId: z.string().optional(), orderedChildIds: z.array(z.string()).max(MAX_BATCH) },
   }, guarded(async (args) => {
-    // L'autorisation est faite DANS reorder, liée aux entités réelles (sections/docs résolus),
-    // pas à un anchor fourni par le caller — sinon bypass cross-workspace (cf. revue sécu).
+    // Authorization is done INSIDE reorder, tied to the real entities (resolved sections/docs),
+    // not to a caller-supplied anchor — otherwise cross-workspace bypass (cf. security review).
     return json(await reorder(args, sub));
   }));
 
   server.registerTool("mem_move_documents", {
-    description: "Déplace des documents vers une section cible (dédup des slugs). `dryRun:true` pour prévisualiser sans muter.",
+    description: "Moves documents to a target section (slug dedup). `dryRun:true` to preview without mutating.",
     inputSchema: { documentIds: z.array(z.string()).max(MAX_BATCH), targetSectionId: z.string(), dryRun: z.boolean().optional() },
   }, guarded(async (args) => {
     await assertAccess(sub, { id: args.targetSectionId, kind: "section" }, { write: true });
@@ -614,7 +614,7 @@ function buildServer(sub: string): McpServer {
   }));
 
   server.registerTool("mem_split_section", {
-    description: "Scinde une section : crée une nouvelle section sœur et y déplace `documentIdsToMove`. `dryRun:true` pour prévisualiser.",
+    description: "Splits a section: creates a new sibling section and moves `documentIdsToMove` into it. `dryRun:true` to preview.",
     inputSchema: { id: z.string(), newSectionTitle: z.string(), documentIdsToMove: z.array(z.string()).max(MAX_BATCH), dryRun: z.boolean().optional() },
   }, guarded(async (args) => {
     await assertAccess(sub, { id: args.id, kind: "section" }, { write: true });
@@ -622,7 +622,7 @@ function buildServer(sub: string): McpServer {
   }));
 
   server.registerTool("mem_merge_sections", {
-    description: "Fusionne des sections (sans sous-sections) dans une cible : déplace leurs documents puis supprime les sources. `dryRun:true` pour prévisualiser.",
+    description: "Merges sections (without sub-sections) into a target: moves their documents then deletes the source sections. `dryRun:true` to preview.",
     inputSchema: { sourceIds: z.array(z.string()).max(MAX_BATCH), targetId: z.string(), dryRun: z.boolean().optional() },
   }, guarded(async (args) => {
     await assertAccess(sub, { id: args.targetId, kind: "section" }, { write: true });
@@ -631,12 +631,12 @@ function buildServer(sub: string): McpServer {
 
   server.registerTool("mem_revisions", {
     description:
-      "Journal des mutations curées d'un workspace (op, motif, acteur, avant/après), du plus récent au plus ancien. Filtres : `targetType` (block|document|section), `targetId`, `since` (« qu'est-ce qui a changé depuis ma dernière session ? »), `limit`. `total`/`hasMore` = vrai compte de correspondants.",
+      "Log of a workspace's curated mutations (op, reason, actor, before/after), from most recent to oldest. Filters: `targetType` (block|document|section), `targetId`, `since` (\"what changed since my last session?\"), `limit`. `total`/`hasMore` = true count of matches.",
     inputSchema: {
       workspace: z.string().optional(),
       targetType: z.string().optional(),
       targetId: z.string().optional(),
-      since: z.string().optional().describe("ISO 8601 — ne renvoie que les révisions postérieures"),
+      since: z.string().optional().describe("ISO 8601 — returns only later revisions"),
       limit: z.number().int().positive().optional(),
     },
   }, guarded(async (args) => {
@@ -646,25 +646,25 @@ function buildServer(sub: string): McpServer {
     return json({ workspace: ws, org, ...(await listRevisions({ ...rest, workspace: ws })) });
   }));
 
-  // ── Boucle propose-valide (Lot 5) ───────────────────────────────────────────
+  // ── propose-validate loop (Batch 5) ─────────────────────────────────────────
   server.registerTool("mem_stage_changes", {
     description:
-      "Propose un change-set (ne mute RIEN) → crée un MemIngestion PROPOSED, revu par un humain avant application. " +
-      "La réponse échoue `url` = LE lien de revue (Boucle) à donner à l'humain — ne jamais fabriquer d'URL soi-même. " +
+      "Proposes a change-set (mutates NOTHING) → creates a PROPOSED MemIngestion, reviewed by a human before application. " +
+      "The response echoes `url` = THE review link (Loop) to give the human — never craft a URL yourself. " +
       "`changes[]` = [{op, payload, class?, target?, rationale?}]. " +
       "op ∈ add_document|add_block|update_block|set_block_type|delete_block|attach_source|detach_source|verify_block|move_block|link_blocks|deprecate_document. " +
-      "`payload` = les arguments du verbe correspondant. class ∈ CONFIRM|ENRICH|CONTRADICT|OBSOLETE (CONTRADICT n'est jamais auto-appliqué). " +
-      "`clientKey` (recommandé) = clé d'idempotence ET de révision : si une ingestion ouverte (PROPOSED/PARTIAL/CHANGES_REQUESTED) " +
-      "porte déjà ce clientKey, ton nouvel appel REMPLACE son change-set et la rouvre en PROPOSED (`superseded: true`) — c'est ainsi qu'on répond à un renvoi : " +
-      "relis le feedback via mem_ingestion_get, puis re-stage avec le MÊME clientKey. Une ingestion clôturée (APPLIED/REJECTED) reste un no-op (`deduplicated: true`). " +
-      "La réponse signale les blocs quasi identiques déjà en base pour chaque add_block proposé (`similarExisting`) — préfère CONFIRM/verify sur l'existant à un doublon.",
+      "`payload` = the arguments of the corresponding verb. class ∈ CONFIRM|ENRICH|CONTRADICT|OBSOLETE (CONTRADICT is never auto-applied). " +
+      "`clientKey` (recommended) = idempotency AND revision key: if an open ingestion (PROPOSED/PARTIAL/CHANGES_REQUESTED) " +
+      "already carries this clientKey, your new call REPLACES its change-set and reopens it as PROPOSED (`superseded: true`) — this is how you respond to a sent-back ingestion: " +
+      "re-read the feedback via mem_ingestion_get, then re-stage with the SAME clientKey. A closed ingestion (APPLIED/REJECTED) stays a no-op (`deduplicated: true`). " +
+      "The response flags near-identical blocks already in the base for each proposed add_block (`similarExisting`) — prefer CONFIRM/verify on the existing one over a duplicate.",
     inputSchema: {
       workspace: z.string().optional(),
       title: z.string(),
       summary: z.string().optional(),
       sourceId: z.string().optional(),
-      clientKey: z.string().optional().describe("clé d'idempotence (unique par workspace) — fournis-la pour des retries sûrs"),
-      loadToken: z.string().optional().describe("jeton rendu par mem_load — prouve que tu as chargé la KB avant d'écrire"),
+      clientKey: z.string().optional().describe("idempotency key (unique per workspace) — provide it for safe retries"),
+      loadToken: z.string().optional().describe("token returned by mem_load — proves you loaded the KB before writing"),
       changes: z.array(z.object({
         op: z.string(),
         payload: z.record(z.string(), z.any()).optional(),
@@ -684,8 +684,8 @@ function buildServer(sub: string): McpServer {
   }));
 
   server.registerTool("mem_ingestion_list", {
-    description: "Liste les ingestions d'une KB (compteurs par classe + état). Filtre `status` (PROPOSED|APPLIED|REJECTED|PARTIAL|CHANGES_REQUESTED). " +
-      "status=CHANGES_REQUESTED → les ingestions qu'un humain t'a renvoyées pour révision : relis-les (mem_ingestion_get), traite le feedback, re-stage avec le même clientKey. `workspace` optionnel = KB par défaut.",
+    description: "Lists a KB's ingestions (counts by class + state). Filter `status` (PROPOSED|APPLIED|REJECTED|PARTIAL|CHANGES_REQUESTED). " +
+      "status=CHANGES_REQUESTED → the ingestions a human sent back to you for revision: re-read them (mem_ingestion_get), handle the feedback, re-stage with the same clientKey. `workspace` optional = default KB.",
     inputSchema: { workspace: z.string().optional(), status: z.string().optional() },
   }, guarded(async (args) => {
     const { workspace: _w, ...rest } = args;
@@ -695,8 +695,8 @@ function buildServer(sub: string): McpServer {
   }));
 
   server.registerTool("mem_ingestion_get", {
-    description: "Revue d'une ingestion : le diff classé op par op, avec l'état (applied/error) de chacune. " +
-      "Si elle t'a été renvoyée (status CHANGES_REQUESTED), lis `reviewNote` (note globale) et `changes[].feedback[]` (retours par changement) : c'est ce qu'il faut corriger avant de re-stage avec le même clientKey.",
+    description: "Review of an ingestion: the diff classified op by op, with the state (applied/error) of each. " +
+      "If it was sent back to you (status CHANGES_REQUESTED), read `reviewNote` (global note) and `changes[].feedback[]` (per-change feedback): that's what to fix before re-staging with the same clientKey.",
     inputSchema: { id: z.string() },
   }, guarded(async ({ id }) => {
     await assertAccess(sub, { id, kind: "ingestion" });
@@ -705,8 +705,8 @@ function buildServer(sub: string): McpServer {
 
   server.registerTool("mem_apply_ingestion", {
     description:
-      "Applique une ingestion PROPOSED/PARTIAL, transactionnellement par op (une MemRevision par op, liée à l'ingestion). " +
-      "Sans `acceptIds`, applique tout SAUF les ops CONTRADICT (tenues en attente). Avec `acceptIds`, n'applique que ce sous-ensemble (→ APPLIED si tout passe, sinon PARTIAL).",
+      "Applies a PROPOSED/PARTIAL ingestion, transactionally per op (one MemRevision per op, linked to the ingestion). " +
+      "Without `acceptIds`, applies everything EXCEPT the CONTRADICT ops (held pending). With `acceptIds`, applies only that subset (→ APPLIED if everything passes, otherwise PARTIAL).",
     inputSchema: { id: z.string(), acceptIds: z.array(z.string()).optional() },
   }, guarded(async (args) => {
     await assertAccess(sub, { id: args.id, kind: "ingestion" }, { write: true });
@@ -714,37 +714,37 @@ function buildServer(sub: string): McpServer {
   }));
 
   server.registerTool("mem_reject_ingestion", {
-    description: "Rejette une ingestion (→ REJECTED). `reason` recommandé.",
+    description: "Rejects an ingestion (→ REJECTED). `reason` recommended.",
     inputSchema: { id: z.string(), reason: z.string().optional() },
   }, guarded(async (args) => {
     await assertAccess(sub, { id: args.id, kind: "ingestion" }, { write: true });
     return json(await rejectIngestion(args, sub));
   }));
 
-  // ── Log d'usage (feedback produit) — ouvert à TOUT user authentifié ─────────
+  // ── Usage log (product feedback) — open to ANY authenticated user ───────────
   server.registerTool("mem_log_usage", {
     description:
-      "QUASI OBLIGATOIRE — signale un problème rencontré avec Memento lui-même, dès qu'il survient : " +
-      "erreur inattendue, recherche qui rate un contenu qui devrait exister, verbe/capacité manquant, " +
-      "paramètre ambigu, description/doc trompeuse, friction de workflow. " +
-      "kind ∈ bug (erreur/comportement cassé) | unexpected (résultat surprenant) | missing (capacité absente) | " +
-      "friction (faisable mais pénible) | docs (description trompeuse) | other. " +
-      "Une ligne suffit (`summary`) ; mets le contexte utile dans `detail` (args de l'appel, message d'erreur, attendu vs obtenu). " +
-      "N'écrit RIEN dans la KB, ne demande aucun rôle, n'échoue jamais sur le contexte — logge puis continue ton travail.",
+      "NEAR-MANDATORY — report a problem encountered with Memento itself, as soon as it happens: " +
+      "unexpected error, a search that misses content that should exist, a missing verb/capability, " +
+      "an ambiguous parameter, a misleading description/doc, workflow friction. " +
+      "kind ∈ bug (error/broken behavior) | unexpected (surprising result) | missing (absent capability) | " +
+      "friction (doable but painful) | docs (misleading description) | other. " +
+      "One line is enough (`summary`); put the useful context in `detail` (call args, error message, expected vs obtained). " +
+      "Writes NOTHING to the KB, requires no role, never fails on context — log it then continue your work.",
     inputSchema: {
       kind: z.enum(USAGE_KINDS),
-      summary: textStr.describe("le problème en une phrase"),
-      detail: textStr.optional().describe("contexte : args de l'appel, erreur exacte, attendu vs obtenu"),
-      verb: z.string().optional().describe("verbe mem_* concerné, ex: mem_search"),
-      workspace: z.string().optional().describe("slug de la KB concernée si pertinent (texte libre, jamais bloquant)"),
+      summary: textStr.describe("the problem in one sentence"),
+      detail: textStr.optional().describe("context: call args, exact error, expected vs obtained"),
+      verb: z.string().optional().describe("the mem_* verb concerned, e.g. mem_search"),
+      workspace: z.string().optional().describe("slug of the KB concerned if relevant (free text, never blocking)"),
     },
   }, guarded(async (args) => json(await logUsage(args, sub))));
 
   server.registerTool("mem_usage_logs", {
     description:
-      "Lit le log d'usage (signalements mem_log_usage), du plus récent au plus ancien. " +
-      "Sans `workspace` : tes propres signalements. Avec `workspace` : tous ceux de la KB (réservé admin/curator). " +
-      "Filtres : `verb`, `kind`. Pour dépouiller le feedback et prioriser les améliorations de l'outil.",
+      "Reads the usage log (mem_log_usage reports), from most recent to oldest. " +
+      "Without `workspace`: your own reports. With `workspace`: all of the KB's (admin/curator only). " +
+      "Filters: `verb`, `kind`. To sift through the feedback and prioritize tool improvements.",
     inputSchema: {
       workspace: z.string().optional(),
       verb: z.string().optional(),
@@ -756,17 +756,17 @@ function buildServer(sub: string): McpServer {
   return server;
 }
 
-// Catalogue fédéré (service-à-service) : la LISTE des outils memento — manifeste
-// product-level, identique pour tous — servie à un pair de confiance (oto) via un
-// secret partagé, SANS OAuth user. Permet à oto de monter ses outils fédérés au
-// boot sans dépendre d'un token OAuth personnel révocable (otomata#16). On extrait
-// le manifeste via un transport in-memory : c'est exactement la sortie `tools/list`
-// du SDK (conversion zod → JSON Schema incluse), sans contexte user (sub vide : on
-// ne liste que les schémas, aucun handler n'est invoqué).
+// Federated catalog (service-to-service): the LIST of memento tools — a
+// product-level manifest, identical for everyone — served to a trusted peer (oto) via a
+// shared secret, WITHOUT user OAuth. Lets oto mount its federated tools at
+// boot without depending on a revocable personal OAuth token (otomata#16). We extract
+// the manifest via an in-memory transport: it's exactly the SDK's `tools/list`
+// output (zod → JSON Schema conversion included), with no user context (empty sub: we
+// only list the schemas, no handler is invoked).
 async function federationCatalog(): Promise<Response> {
-  // Imports DYNAMIQUES : isolent ce chemin du chargement du module — si le SDK
-  // résolvait mal ces specifiers, seul /federation/catalog échouerait, jamais le
-  // serveur MCP principal (les 52 outils restent servis).
+  // DYNAMIC imports: they isolate this path from module loading — if the SDK
+  // resolved these specifiers badly, only /federation/catalog would fail, never the
+  // main MCP server (the 52 tools stay served).
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
@@ -788,7 +788,7 @@ Deno.serve({ port: Number(Deno.env.get("PORT") ?? 8000) }, async (req) => {
   const url = new URL(req.url);
   if (url.pathname.endsWith("/health")) return new Response("ok");
 
-  // Découverte OAuth, servie SANS auth (RFC 9728 / 8414).
+  // OAuth discovery, served WITHOUT auth (RFC 9728 / 8414).
   const disc = isDiscoveryPath(url.pathname);
   if (disc === "prm") {
     return new Response(JSON.stringify(protectedResourceMetadata()), {
@@ -797,8 +797,8 @@ Deno.serve({ port: Number(Deno.env.get("PORT") ?? 8000) }, async (req) => {
   }
   if (disc === "as") return authServerMetadata();
 
-  // Catalogue fédéré : authentifié par le SECRET DE SERVICE partagé avec oto
-  // (MEMENTO_FEDERATION_SECRET), pas par l'OAuth user. Avant authenticate().
+  // Federated catalog: authenticated by the SERVICE SECRET shared with oto
+  // (MEMENTO_FEDERATION_SECRET), not by user OAuth. Before authenticate().
   if (url.pathname.endsWith("/federation/catalog")) {
     const secret = Deno.env.get("MEMENTO_FEDERATION_SECRET");
     const got = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");

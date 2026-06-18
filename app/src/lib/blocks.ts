@@ -1,10 +1,10 @@
-// Helpers de présentation des blocs (portés du design « Éditorial fidèle »).
-// Sémantique couleur des types = le langage, pas le style → constante.
+// Block presentation helpers (ported from the "faithful editorial" design).
+// Color semantics of types = the language, not the style → constant.
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import type { Block } from "../api";
 
-/** Rôle visuel par type de bloc (jaune=normatif, bleu=définition, vert=pratique, rouge=garde-fou). */
+/** Visual role per block type (yellow=normative, blue=definition, green=practical, red=guardrail). */
 export const TYPE_ROLE: Record<string, string> = {
   PRINCIPE: "primary", REGLE: "primary",
   DEFINITION: "accent", QUESTION: "accent",
@@ -15,28 +15,28 @@ export const TYPE_ROLE: Record<string, string> = {
 export const roleClass = (type: string): string => "role-" + (TYPE_ROLE[type] ?? "mute");
 
 export const RELLABEL: Record<string, string> = {
-  CONTRADICTS: "contredit", SUPERSEDES: "remplace", DEPENDS_ON: "dépend de", REFERENCES: "référence",
+  CONTRADICTS: "contradicts", SUPERSEDES: "supersedes", DEPENDS_ON: "depends on", REFERENCES: "references",
 };
 export const RELGLYPH: Record<string, string> = {
   CONTRADICTS: "⚡", SUPERSEDES: "⇡", DEPENDS_ON: "⇠", REFERENCES: "→",
 };
-/** Classe d'accent d'une relation (rouge pour les cas précieux, bleu pour les appuis). */
+/** Accent class for a relation (red for the precious cases, blue for the supports). */
 export const relClass = (rel: string): string =>
   rel === "CONTRADICTS" || rel === "SUPERSEDES" ? "warn"
     : rel === "REFERENCES" || rel === "DEPENDS_ON" ? "accent" : "";
 
-/** Marque de confiance : [classe css, libellé]. */
+/** Trust mark: [css class, label]. */
 export function trustMark(b: Pick<Block, "verifiedAt" | "sources">): [string, string] {
-  if (b.verifiedAt) return ["ok", "✓ vérifié"];
-  return b.sources.length ? ["", "○ non vérifié"] : ["no", "⚠ sans source"];
+  if (b.verifiedAt) return ["ok", "✓ verified"];
+  return b.sources.length ? ["", "○ unverified"] : ["no", "⚠ no source"];
 }
 
-/** Rendu markdown sanitisé (contenu scrappé → non fiable). Identique à DocumentPane. */
+/** Sanitized markdown rendering (scraped content → untrusted). Identical to DocumentPane. */
 export function renderMd(md: string): string {
   return DOMPurify.sanitize(marked.parse(md ?? "", { async: false }) as string);
 }
 
-/** N'autorise que les schémas sûrs pour un href de source. */
+/** Only allows safe schemes for a source href. */
 export function safeHref(u: string | null | undefined): string | undefined {
   return u && /^(https?:|mailto:|\/)/i.test(u) ? u : undefined;
 }
@@ -44,8 +44,8 @@ export function safeHref(u: string | null | undefined): string | undefined {
 export interface Neighbour { rel: string; otherId: string; note: string | null }
 
 /**
- * Voisins d'un bloc groupés par relation (dédup des liens symétriques).
- * Combine liens sortants (linksFrom→toBlockId) et entrants (linksTo→fromBlockId).
+ * Neighbours of a block grouped by relation (dedup of symmetric links).
+ * Combines outgoing links (linksFrom→toBlockId) and incoming links (linksTo→fromBlockId).
  */
 export function neighbours(center: Block): Record<string, Neighbour[]> {
   const all: Neighbour[] = [

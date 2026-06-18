@@ -1,8 +1,8 @@
 <script setup lang="ts">
-// Mode agent : chat sur une KB. Réponses streamées (SSE) depuis la function `agent`.
-// Deux présentations (même logique) : `drawer` (overlay latéral, dans le viewer) et
-// `page` (plein écran, route /w/:ws/agent). L'agent répond à partir du contenu de la
-// base, et de lui seul (cf. supabase/functions/agent).
+// Agent mode: chat over a KB. Responses streamed (SSE) from the `agent` function.
+// Two presentations (same logic): `drawer` (side overlay, in the viewer) and
+// `page` (full screen, route /w/:ws/agent). The agent answers from the content of the
+// knowledge base, and from it alone (cf. supabase/functions/agent).
 import { nextTick, ref } from "vue";
 import { agentChat, type AgentChatMessage } from "../api";
 import { renderMd } from "../lib/blocks";
@@ -32,18 +32,18 @@ async function send() {
   if (!text || busy.value) return;
   input.value = "";
   error.value = null;
-  // Historique = échanges précédents (avant d'ajouter le tour courant).
+  // History = previous exchanges (before adding the current turn).
   const history: AgentChatMessage[] = messages.value.map((m) => ({ role: m.role, content: m.content }));
   messages.value.push({ role: "user", content: text });
   messages.value.push({ role: "assistant", content: "" });
-  const assistant = messages.value[messages.value.length - 1]; // proxy réactif → mutation suivie
+  const assistant = messages.value[messages.value.length - 1]; // reactive proxy → mutation tracked
   busy.value = true;
-  status.value = "Recherche dans la base…";
+  status.value = "Searching the knowledge base…";
   await scrollDown();
   try {
     await agentChat(props.workspace, text, history, (ev) => {
       if (ev.type === "token") { assistant.content += ev.text; status.value = null; scrollDown(); }
-      else if (ev.type === "status") { status.value = "Recherche dans la base…"; }
+      else if (ev.type === "status") { status.value = "Searching the knowledge base…"; }
       else if (ev.type === "error") { error.value = ev.message; }
     });
   } catch (e) {
@@ -51,7 +51,7 @@ async function send() {
   } finally {
     busy.value = false;
     status.value = null;
-    if (!assistant.content && !error.value) assistant.content = "_(pas de réponse)_";
+    if (!assistant.content && !error.value) assistant.content = "_(no response)_";
     scrollDown();
   }
 }
@@ -68,14 +68,14 @@ function onKey(e: KeyboardEvent) {
       <div class="ag-head">
         <div>
           <div class="eb">✦ Agent · {{ kbName }}</div>
-          <h2 class="ag-title">Demander à la base</h2>
+          <h2 class="ag-title">Ask the knowledge base</h2>
         </div>
         <button v-if="variant === 'drawer'" class="btn" @click="emit('close')">✕</button>
       </div>
 
       <div ref="bodyEl" class="ag-body">
         <p v-if="!messages.length" class="muted ag-hint">
-          Pose ta question : je réponds à partir du contenu de « {{ kbName }} », et de lui seul.
+          Ask your question: I answer from the content of "{{ kbName }}", and from it alone.
         </p>
         <div v-for="(m, i) in messages" :key="i" class="ag-msg" :class="m.role">
           <div v-if="m.role === 'assistant'" class="ag-bubble ag-md" v-html="renderMd(m.content || '…')" />
@@ -86,10 +86,10 @@ function onKey(e: KeyboardEvent) {
       </div>
 
       <div class="ag-foot">
-        <textarea v-model="input" rows="2" class="ag-input" placeholder="Ta question…"
+        <textarea v-model="input" rows="2" class="ag-input" placeholder="Your question…"
           :disabled="busy" @keydown="onKey" />
         <button class="btn primary" :disabled="busy || !input.trim()" @click="send">
-          {{ busy ? "…" : "Envoyer" }}
+          {{ busy ? "…" : "Send" }}
         </button>
       </div>
     </div>
@@ -97,10 +97,10 @@ function onKey(e: KeyboardEvent) {
 </template>
 
 <style scoped>
-/* Présentation drawer : overlay latéral droit (dans le viewer) */
+/* Drawer presentation: right side overlay (in the viewer) */
 .ag-overlay { position: fixed; inset: 0; z-index: 500; background: rgba(44, 33, 18, 0.32); display: flex; justify-content: flex-end; }
 .ag-panel--drawer { max-width: 460px; border-left: 2px solid var(--color-ink); box-shadow: -8px 0 0 var(--color-hair-soft); }
-/* Présentation page : plein écran, panneau centré lisible */
+/* Page presentation: full screen, centered readable panel */
 .ag-page { height: 100%; min-height: 100vh; display: flex; justify-content: center; background: var(--color-bg); }
 .ag-panel--page { max-width: 760px; border-left: 1px solid var(--color-hair); border-right: 1px solid var(--color-hair); }
 

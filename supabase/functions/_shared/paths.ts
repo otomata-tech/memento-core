@@ -1,10 +1,10 @@
 /**
- * Résolution de chemins slugifiés → entités. Un `path` Memento est
- * `workspace/section[/sous-section...]` (pour une section) ou
- * `workspace/section[/...]/document` (pour un document). Le premier segment est
- * toujours le slug du workspace.
+ * Resolving slugified paths → entities. A Memento `path` is
+ * `workspace/section[/subsection...]` (for a section) or
+ * `workspace/section[/...]/document` (for a document). The first segment is
+ * always the workspace slug.
  *
- * Pas de fallback : un chemin qui ne résout pas lève une erreur explicite.
+ * No fallback: a path that doesn't resolve throws an explicit error.
  */
 import { and, eq, isNull } from "drizzle-orm";
 import { db, workspaces, sections, documents } from "./db.ts";
@@ -15,29 +15,29 @@ export type Document = typeof documents.$inferSelect;
 
 export function splitPath(path: string): string[] {
   const segments = path.split("/").map((s) => s.trim()).filter(Boolean);
-  if (segments.length === 0) throw new Error(`Chemin vide`);
+  if (segments.length === 0) throw new Error(`Empty path`);
   return segments;
 }
 
 export async function resolveWorkspaceBySlug(slug: string): Promise<Workspace> {
   const [ws] = await db.select().from(workspaces).where(eq(workspaces.slug, slug)).limit(1);
-  if (!ws) throw new Error(`Workspace introuvable: "${slug}"`);
+  if (!ws) throw new Error(`Workspace not found: "${slug}"`);
   return ws;
 }
 
 export async function resolveWorkspaceById(id: string): Promise<Workspace> {
   const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, id)).limit(1);
-  if (!ws) throw new Error(`Workspace introuvable: ${id}`);
+  if (!ws) throw new Error(`Workspace not found: ${id}`);
   return ws;
 }
 
-/** Descend l'arbre de sections en suivant la chaîne de slugs sous le bon parent. */
+/** Descends the section tree following the chain of slugs under the right parent. */
 export async function resolveSectionByPath(
   path: string,
 ): Promise<{ workspace: Workspace; section: Section }> {
   const segments = splitPath(path);
   if (segments.length < 2) {
-    throw new Error(`Chemin de section invalide: "${path}" (attendu workspace/section/...)`);
+    throw new Error(`Invalid section path: "${path}" (expected workspace/section/...)`);
   }
   const workspace = await resolveWorkspaceBySlug(segments[0]);
   let parentId: string | null = null;
@@ -54,7 +54,7 @@ export async function resolveSectionByPath(
         ),
       )
       .limit(1);
-    if (!row) throw new Error(`Section introuvable: "${slug}" dans le chemin "${path}"`);
+    if (!row) throw new Error(`Section not found: "${slug}" in path "${path}"`);
     section = row;
     parentId = row.id;
   }
@@ -66,7 +66,7 @@ export async function resolveDocumentByPath(
 ): Promise<{ workspace: Workspace; section: Section; document: Document }> {
   const segments = splitPath(path);
   if (segments.length < 3) {
-    throw new Error(`Chemin de document invalide: "${path}" (attendu workspace/section/.../document)`);
+    throw new Error(`Invalid document path: "${path}" (expected workspace/section/.../document)`);
   }
   const docSlug = segments[segments.length - 1];
   const { workspace, section } = await resolveSectionByPath(segments.slice(0, -1).join("/"));
@@ -75,14 +75,14 @@ export async function resolveDocumentByPath(
     .from(documents)
     .where(and(eq(documents.sectionId, section.id), eq(documents.slug, docSlug)))
     .limit(1);
-  if (!document) throw new Error(`Document introuvable: "${docSlug}" dans le chemin "${path}"`);
+  if (!document) throw new Error(`Document not found: "${docSlug}" in path "${path}"`);
   return { workspace, section, document };
 }
 
 /**
- * Construit la table {sectionId → chemin slugifié complet} pour un workspace,
- * préfixée par le slug du workspace. Utilisé pour reconstituer sectionPath/docPath
- * dans les hits de recherche sans requête récursive.
+ * Builds the {sectionId → full slugified path} table for a workspace,
+ * prefixed by the workspace slug. Used to reconstruct sectionPath/docPath
+ * in search hits without a recursive query.
  */
 export async function loadSectionPathMap(
   workspaceId: string,
@@ -109,9 +109,9 @@ export async function loadSectionPathMap(
 }
 
 /**
- * Ids des sections d'un sous-arbre (préfixe de chemin slugifié). Sert au filtre
- * `sectionPath` de la recherche — lexical ET sémantique, mêmes sections pour les
- * deux régimes. Préfixe sans correspondance → liste vide (zéro hit, pas d'erreur).
+ * Ids of the sections of a subtree (slugified path prefix). Serves the search's
+ * `sectionPath` filter — lexical AND semantic, same sections for both
+ * regimes. Prefix with no match → empty list (zero hits, not an error).
  */
 export async function resolveSectionIds(
   workspaceId: string,

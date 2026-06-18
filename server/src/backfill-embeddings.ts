@@ -1,14 +1,14 @@
 /**
- * Backfill des embeddings de blocs (issue #10) : vectorise tout bloc à embedding
- * NULL ou d'un modèle différent. Batch de 100 par appel API (limite OpenAI confort).
- * Usage : DATABASE_URL=<direct> OPENAI_API_KEY=<clé> npm --prefix server run embed:backfill
+ * Backfill of block embeddings (issue #10): vectorizes every block with a NULL
+ * embedding or a different model. Batches of 100 per API call (comfortable OpenAI limit).
+ * Usage: DATABASE_URL=<direct> OPENAI_API_KEY=<key> npm --prefix server run embed:backfill
  */
 import { sql } from "drizzle-orm";
 import { db } from "./db.ts";
 
-const MODEL = "text-embedding-3-small"; // garder aligné avec _shared/semantic.ts
+const MODEL = "text-embedding-3-small"; // keep aligned with _shared/semantic.ts
 const KEY = process.env.OPENAI_API_KEY;
-if (!KEY) { console.error("OPENAI_API_KEY requis"); process.exit(1); }
+if (!KEY) { console.error("OPENAI_API_KEY required"); process.exit(1); }
 
 async function embed(texts: string[]): Promise<number[][]> {
   const res = await fetch("https://api.openai.com/v1/embeddings", {
@@ -34,7 +34,7 @@ for (;;) {
       where id = ${rows[i].id}`);
   }
   total += rows.length;
-  console.log(`…${total} blocs vectorisés`);
+  console.log(`…${total} blocks vectorized`);
 }
-console.log(`terminé : ${total} blocs`);
+console.log(`done: ${total} blocks`);
 process.exit(0);

@@ -1,17 +1,17 @@
 /**
- * Boucle propose-valide (Lot 5). Cf. spec §5.4 / §6.
+ * Propose-validate loop (Batch 5). Cf. spec §5.4 / §6.
  *
- * Un agent propose un change-set (`stage_changes`) → `MemIngestion` PROPOSED, rien n'est muté.
- * Un humain revoit (`get`/`list`) puis applique tout ou un sous-ensemble (`apply`) ou rejette
- * (`reject`). À l'application, chaque op exécute le verbe d'écriture correspondant et journalise
- * une `MemRevision` liée à l'`ingestionId` (réversible via before/after).
+ * An agent proposes a change-set (`stage_changes`) → `MemIngestion` PROPOSED, nothing is mutated.
+ * A human reviews (`get`/`list`) then applies all or a subset (`apply`) or rejects
+ * (`reject`). On application, each op executes the corresponding write verb and logs
+ * a `MemRevision` linked to the `ingestionId` (reversible via before/after).
  *
- * Garde-fou : une op de classe CONTRADICT n'est JAMAIS auto-appliquée — il faut l'accepter
- * explicitement via `acceptIds`. Garde-fou scoping : la cible de chaque op doit appartenir au
- * workspace de l'ingestion (pas de mutation cross-workspace via un change-set forgé).
+ * Guardrail: a CONTRADICT-class op is NEVER auto-applied — it must be accepted
+ * explicitly via `acceptIds`. Scoping guardrail: each op's target must belong to the
+ * ingestion's workspace (no cross-workspace mutation via a forged change-set).
  *
- * L'état de chaque change (applied/error) est persisté dans le `proposal` jsonb : une ingestion
- * PARTIAL peut être ré-appliquée pour traiter les ops restantes.
+ * Each change's state (applied/error) is persisted in the `proposal` jsonb: a PARTIAL
+ * ingestion can be re-applied to process the remaining ops.
  */
 import { and, desc, eq, isNull, lt, notInArray, or } from "drizzle-orm";
 import { db, ingestions, workspaces } from "./db.ts";
@@ -35,7 +35,7 @@ const OPS: Record<string, Handler> = {
   link_blocks: linkBlocks, unlink: unlinkBlocks, deprecate_document: deprecateDocument,
 };
 
-// Cible primaire de chaque op → pour vérifier qu'elle vit dans le workspace de l'ingestion.
+// Primary target of each op → to check that it lives in the ingestion's workspace.
 const TARGET: Record<string, { kind: "section" | "document" | "block" | "link"; field: string }> = {
   add_document: { kind: "section", field: "sectionId" },
   add_block: { kind: "document", field: "documentId" },
@@ -56,8 +56,8 @@ type Change = {
   id: string; op: string; class: string;
   target: string | null; rationale: string | null; payload: Record<string, unknown>;
   applied: boolean; appliedAt?: string; error?: string;
-  feedback?: Feedback[]; // retours de revue humains (ping-pong) ; lus par l'agent au prochain tour
-  edited?: boolean; editedBy?: string; // payload retouché par un humain avant application
+  feedback?: Feedback[]; // human review feedback (ping-pong); read by the agent on the next round
+  edited?: boolean; editedBy?: string; // payload tweaked by a human before application
 };
 
 async function targetWorkspace(op: string, payload: Record<string, unknown>): Promise<string | null> {
@@ -92,11 +92,11 @@ function present(row: typeof ingestions.$inferSelect, slug?: string) {
   };
 }
 
-// Valide les ops/classes et matérialise les changes (id stable par change).
+// Validates the ops/classes and materializes the changes (stable id per change).
 function buildChanges(input: Array<{ op: string; class?: string; target?: string; rationale?: string; payload?: Record<string, unknown> }>): Change[] {
   return input.map((c) => {
-    if (!OPS[c.op]) throw new Error(`op inconnue: ${c.op} (attendu: ${Object.keys(OPS).join(", ")})`);
-    if (c.class && !CLASSES.includes(c.class)) throw new Error(`class invalide: ${c.class} (attendu: ${CLASSES.join(", ")})`);
+    if (!OPS[c.op]) throw new Error(`unknown op: ${c.op} (expected: ${Object.keys(OPS).join(", ")})`);
+    if (c.class && !CLASSES.includes(c.class)) throw new Error(`invalid class: ${c.class} (expected: ${CLASSES.join(", ")})`);
     return {
       id: crypto.randomUUID(), op: c.op, class: c.class ?? "ENRICH",
       target: c.target ?? null, rationale: c.rationale ?? null,
@@ -105,7 +105,7 @@ function buildChanges(input: Array<{ op: string; class?: string; target?: string
   });
 }
 
-// ── Verbes ──────────────────────────────────────────────────────────────────
+// ── Verbs ─────────────────────────────────────────────────────────────────────
 export async function stageChanges(
   args: {
     workspace: string; sourceId?: string; title: string; summary?: string; clientKey?: string;
@@ -115,20 +115,20 @@ export async function stageChanges(
 ) {
   const [ws] = await db.select({ id: workspaces.id, slug: workspaces.slug }).from(workspaces)
     .where(eq(workspaces.slug, args.workspace)).limit(1);
-  if (!ws) throw new Error(`Workspace introuvable: ${args.workspace}`);
-  if (!args.changes?.length) throw new Error("`changes` vide");
+  if (!ws) throw new Error(`Workspace not found: ${args.workspace}`);
+  if (!args.changes?.length) throw new Error("`changes` is empty");
 
-  // Idempotence (#44) + supersession (ping-pong) : même clientKey, même workspace.
+  // Idempotence (#44) + supersession (ping-pong): same clientKey, same workspace.
   if (args.clientKey) {
     const [dup] = await db.select().from(ingestions)
       .where(and(eq(ingestions.workspaceId, ws.id), eq(ingestions.clientKey, args.clientKey))).limit(1);
     if (dup) {
-      // Clôturée (APPLIED/REJECTED) → no-op idempotent (retry sûr).
+      // Closed (APPLIED/REJECTED) → idempotent no-op (safe retry).
       if (dup.status === "APPLIED" || dup.status === "REJECTED") {
         return { ...present(dup, ws.slug), deduplicated: true };
       }
-      // Ouverte (PROPOSED/PARTIAL/CHANGES_REQUESTED) → l'agent re-propose après revue :
-      // on remplace le change-set, on rouvre en PROPOSED et on efface l'état de décision.
+      // Open (PROPOSED/PARTIAL/CHANGES_REQUESTED) → the agent re-proposes after review:
+      // we replace the change-set, reopen as PROPOSED and clear the decision state.
       const next = buildChanges(args.changes);
       const [upd] = await db.update(ingestions).set({
         title: args.title, summary: args.summary ?? "", sourceId: args.sourceId ?? dup.sourceId,
@@ -145,10 +145,10 @@ export async function stageChanges(
     summary: args.summary ?? "", proposal: changes, status: "PROPOSED", createdBy: actor,
     clientKey: args.clientKey ?? null,
   }).onConflictDoNothing({ target: [ingestions.workspaceId, ingestions.clientKey] }).returning();
-  if (!row) return stageChanges(args, actor); // course perdue check/insert → relit l'existante
+  if (!row) return stageChanges(args, actor); // lost the check/insert race → re-read the existing one
 
-  // Signal anti-doublon (#44), best-effort : pour chaque add_block proposé, les blocs
-  // quasi identiques déjà en base. Le serveur signale, l'agent et le relecteur jugent.
+  // Anti-duplicate signal (#44), best-effort: for each proposed add_block, the near-identical
+  // blocks already in the database. The server signals, the agent and reviewer judge.
   const dupChecks = await Promise.all(
     changes
       .filter((c) => c.op === "add_block" && typeof c.payload.content === "string")
@@ -164,7 +164,7 @@ export async function stageChanges(
 
 async function fetchWithSlug(id: string) {
   const [row] = await db.select().from(ingestions).where(eq(ingestions.id, id)).limit(1);
-  if (!row) throw new Error(`Ingestion introuvable: ${id}`);
+  if (!row) throw new Error(`Ingestion not found: ${id}`);
   const [ws] = await db.select({ slug: workspaces.slug }).from(workspaces)
     .where(eq(workspaces.id, row.workspaceId)).limit(1);
   return { row, slug: ws?.slug };
@@ -178,7 +178,7 @@ export async function getIngestion(id: string) {
 export async function listIngestions(args: { workspace: string; status?: string }) {
   const [ws] = await db.select({ id: workspaces.id }).from(workspaces)
     .where(eq(workspaces.slug, args.workspace)).limit(1);
-  if (!ws) throw new Error(`Workspace introuvable: ${args.workspace}`);
+  if (!ws) throw new Error(`Workspace not found: ${args.workspace}`);
   const conds = [eq(ingestions.workspaceId, ws.id)];
   if (args.status) conds.push(eq(ingestions.status, args.status as any));
   const rows = await db.select().from(ingestions).where(and(...conds)).orderBy(desc(ingestions.createdAt));
@@ -196,10 +196,10 @@ export async function applyIngestion(
   args: { id: string; acceptIds?: string[]; edits?: Array<{ id: string; payload: Record<string, unknown> }> },
   actor: string,
 ) {
-  // Claim atomique (#40) : réserve l'ingestion AVANT tout travail. Un seul UPDATE
-  // gagne la course ; un apply concurrent ou rejoué (retry transport en vol)
-  // obtient 0 ligne → no-op idempotent, plus de double exécution du change-set.
-  const claimCutoff = new Date(Date.now() - 5 * 60_000); // claim plus vieux = apply crashé → ré-ouvrable
+  // Atomic claim (#40): reserves the ingestion BEFORE any work. A single UPDATE
+  // wins the race; a concurrent or replayed apply (in-flight transport retry)
+  // gets 0 rows → idempotent no-op, no double execution of the change-set.
+  const claimCutoff = new Date(Date.now() - 5 * 60_000); // older claim = crashed apply → reopenable
   const [claimed] = await db.update(ingestions)
     .set({ claimedAt: new Date() })
     .where(and(
@@ -209,7 +209,7 @@ export async function applyIngestion(
     ))
     .returning({ id: ingestions.id });
   if (!claimed) {
-    // Déjà clôturée, ou un autre apply tient le claim → no-op, on renvoie l'état courant.
+    // Already closed, or another apply holds the claim → no-op, we return the current state.
     const { row, slug } = await fetchWithSlug(args.id);
     return {
       id: args.id, workspace: slug, status: row.status,
@@ -225,18 +225,18 @@ export async function applyIngestion(
   for (const c of changes) {
     if (c.applied) { results.push({ id: c.id, status: "already" }); continue; }
     if (accept && !accept.has(c.id)) { results.push({ id: c.id, status: "skipped" }); continue; }
-    // CONTRADICT jamais auto-appliqué : exige une acceptation explicite par id.
+    // CONTRADICT never auto-applied: requires explicit acceptance by id.
     if (c.class === "CONTRADICT" && !(accept && accept.has(c.id))) {
-      results.push({ id: c.id, status: "held", reason: "CONTRADICT requiert acceptation explicite (acceptIds)" });
+      results.push({ id: c.id, status: "held", reason: "CONTRADICT requires explicit acceptance (acceptIds)" });
       continue;
     }
-    // Édition humaine en place : on fusionne le payload retouché avant d'exécuter l'op
-    // (la MemRevision tracera donc le contenu validé, pas la proposition brute de l'agent).
+    // In-place human edit: we merge the tweaked payload before executing the op
+    // (so the MemRevision tracks the validated content, not the agent's raw proposal).
     const edit = edits.get(c.id);
     if (edit) { c.payload = { ...c.payload, ...edit }; c.edited = true; c.editedBy = actor; }
     try {
       const wsId = await targetWorkspace(c.op, c.payload);
-      if (wsId !== row.workspaceId) throw new Error("cible hors du workspace de l'ingestion");
+      if (wsId !== row.workspaceId) throw new Error("target outside the ingestion's workspace");
       await OPS[c.op](c.payload, actor, { ingestionId: row.id });
       c.applied = true; c.appliedAt = new Date().toISOString(); delete c.error;
       results.push({ id: c.id, status: "applied" });
@@ -248,7 +248,7 @@ export async function applyIngestion(
 
   const status = changes.some((c) => !c.applied) ? "PARTIAL" : "APPLIED";
   await db.update(ingestions)
-    // claimedAt: null → libère le verrou (#40) ; un re-apply légitime d'un PARTIAL pourra reprendre.
+    // claimedAt: null → releases the lock (#40); a legitimate re-apply of a PARTIAL can resume.
     .set({ proposal: changes, status, decidedBy: actor, decidedAt: new Date(), claimedAt: null })
     .where(eq(ingestions.id, args.id));
   return { id: args.id, workspace: slug, status, counts: counts(changes), results };
@@ -257,7 +257,7 @@ export async function applyIngestion(
 export async function rejectIngestion(args: { id: string; reason?: string }, actor: string) {
   const { row } = await fetchWithSlug(args.id);
   if (row.status === "APPLIED" || row.status === "REJECTED") {
-    throw new Error(`ingestion déjà clôturée (${row.status})`);
+    throw new Error(`ingestion already closed (${row.status})`);
   }
   await db.update(ingestions)
     .set({ status: "REJECTED", decidedBy: actor, decidedAt: new Date() })
@@ -266,10 +266,10 @@ export async function rejectIngestion(args: { id: string; reason?: string }, act
 }
 
 /**
- * Renvoie une ingestion à l'agent pour révision (ping-pong de revue). Attache le feedback
- * humain par changement (`items[].changeId`) et/ou une note globale (`note` ou items sans
- * changeId), passe en CHANGES_REQUESTED. L'agent relit via get/list puis re-propose avec le
- * même `clientKey` (→ supersession). Rien n'est muté dans la KB.
+ * Sends an ingestion back to the agent for revision (review ping-pong). Attaches human
+ * feedback per change (`items[].changeId`) and/or a global note (`note` or items without
+ * a changeId), and moves to CHANGES_REQUESTED. The agent re-reads via get/list then
+ * re-proposes with the same `clientKey` (→ supersession). Nothing is mutated in the KB.
  */
 export async function requestChanges(
   args: { id: string; note?: string; items?: Array<{ changeId?: string; body: string }> },
@@ -277,7 +277,7 @@ export async function requestChanges(
 ) {
   const { row, slug } = await fetchWithSlug(args.id);
   if (row.status === "APPLIED" || row.status === "REJECTED") {
-    throw new Error(`ingestion déjà clôturée (${row.status})`);
+    throw new Error(`ingestion already closed (${row.status})`);
   }
   const changes = (row.proposal as Change[]) ?? [];
   const at = new Date().toISOString();
@@ -286,16 +286,16 @@ export async function requestChanges(
   for (const it of items) {
     if (!it.body?.trim() || !it.changeId) continue;
     const target = changes.find((c) => c.id === it.changeId);
-    if (!target) continue; // changeId inconnu → ignoré silencieusement
+    if (!target) continue; // unknown changeId → silently ignored
     (target.feedback ??= []).push({ author: actor, authorKind: "human", body: it.body.trim(), at });
     attached++;
   }
-  // Note globale = `note` + tout item sans changeId.
+  // Global note = `note` + any item without a changeId.
   const general = [
     ...(args.note?.trim() ? [args.note.trim()] : []),
     ...items.filter((it) => !it.changeId && it.body?.trim()).map((it) => it.body.trim()),
   ];
-  if (!attached && !general.length) throw new Error("aucun feedback fourni (note ou items)");
+  if (!attached && !general.length) throw new Error("no feedback provided (note or items)");
   const reviewNote = general.length ? general.join("\n\n") : row.reviewNote;
   await db.update(ingestions)
     .set({ proposal: changes, reviewNote, status: "CHANGES_REQUESTED", decidedBy: actor, decidedAt: new Date() })

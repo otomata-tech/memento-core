@@ -1,7 +1,7 @@
 /**
- * Gabarits d'email transactionnel — HTML inline + texte brut, rendus en chaînes
- * côté serveur (pas de build React Email dans le runtime Deno edge). Sobre, une
- * seule action par mail (CTA → lien d'invitation / de connexion).
+ * Transactional email templates — inline HTML + plain text, rendered to strings
+ * server-side (no React Email build in the Deno edge runtime). Sober, a single
+ * action per email (CTA → invitation / sign-in link).
  */
 import type { EmailMessage } from "./resend.ts";
 
@@ -18,17 +18,17 @@ function escapeHtml(s: string): string {
 
 function roleLabel(role?: string): string {
   switch (role) {
-    case "admin": return "administrateur";
-    case "curator": return "curateur (lecture + écriture)";
-    case "member": return "lecteur";
+    case "admin": return "administrator";
+    case "curator": return "curator (read + write)";
+    case "member": return "reader";
     default: return "";
   }
 }
 
-/** Coque HTML commune : conteneur centré, CTA, pied de page. */
+/** Shared HTML shell: centered container, CTA, footer. */
 function layout(intro: string, ctaLabel: string, link: string, outro: string): string {
   return `<!doctype html>
-<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 </head>
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:32px 0;">
@@ -43,7 +43,7 @@ function layout(intro: string, ctaLabel: string, link: string, outro: string): s
         </td></tr>
         <tr><td style="padding:0 32px 28px;color:${MUTED};font-size:13px;line-height:1.5;">${outro}</td></tr>
         <tr><td style="padding:16px 32px;border-top:1px solid #f0f0f0;color:${MUTED};font-size:12px;">
-          ${BRAND} — base de connaissance structurée, sourcée et auditable.
+          ${BRAND} — a structured, sourced and auditable knowledge base.
         </td></tr>
       </table>
     </td></tr>
@@ -60,33 +60,33 @@ export interface InviteEmailContext {
 }
 
 /**
- * Email d'invitation / de connexion : on a été ajouté à une org ou à une KB, le
- * CTA pointe vers le lien d'action GoTrue (invite ou magic link) qui provisionne
- * la session puis redirige vers l'app.
+ * Invitation / sign-in email: you've been added to an org or a KB, the CTA
+ * points to the GoTrue action link (invite or magic link) that provisions the
+ * session then redirects to the app.
  */
 export function invitationEmail(ctx: InviteEmailContext): EmailMessage {
-  const scopeWord = ctx.scope === "org" ? "l'organisation" : "la base de connaissance";
+  const scopeWord = ctx.scope === "org" ? "the organization" : "the knowledge base";
   const name = escapeHtml(ctx.targetName);
   const inviter = ctx.inviterEmail
-    ? `<strong>${escapeHtml(ctx.inviterEmail)}</strong> vous invite`
-    : "Vous êtes invité·e";
+    ? `<strong>${escapeHtml(ctx.inviterEmail)}</strong> invites you`
+    : "You're invited";
   const role = roleLabel(ctx.role);
-  const roleLine = role ? ` en tant que <strong>${role}</strong>` : "";
+  const roleLine = role ? ` as <strong>${role}</strong>` : "";
 
-  const subject = `Invitation à rejoindre ${ctx.targetName} sur ${BRAND}`;
-  const intro = `${inviter} à rejoindre ${scopeWord} <strong>${name}</strong>${roleLine} sur ${BRAND}.`;
-  const outro = "Ce lien vous connecte et vous redirige vers l'application. Si vous n'attendiez pas cette invitation, ignorez ce message.";
-  const html = layout(intro, "Rejoindre " + name, ctx.link, outro);
+  const subject = `Invitation to join ${ctx.targetName} on ${BRAND}`;
+  const intro = `${inviter} to join ${scopeWord} <strong>${name}</strong>${roleLine} on ${BRAND}.`;
+  const outro = "This link signs you in and redirects you to the application. If you weren't expecting this invitation, ignore this message.";
+  const html = layout(intro, "Join " + name, ctx.link, outro);
 
-  const roleText = role ? ` en tant que ${role}` : "";
-  const inviterText = ctx.inviterEmail ? `${ctx.inviterEmail} vous invite` : "Vous êtes invité·e";
+  const roleText = role ? ` as ${role}` : "";
+  const inviterText = ctx.inviterEmail ? `${ctx.inviterEmail} invites you` : "You're invited";
   const text = [
-    `${inviterText} à rejoindre ${scopeWord} « ${ctx.targetName} »${roleText} sur ${BRAND}.`,
+    `${inviterText} to join ${scopeWord} "${ctx.targetName}"${roleText} on ${BRAND}.`,
     "",
-    "Ouvrez ce lien pour vous connecter :",
+    "Open this link to sign in:",
     ctx.link,
     "",
-    "Si vous n'attendiez pas cette invitation, ignorez ce message.",
+    "If you weren't expecting this invitation, ignore this message.",
   ].join("\n");
 
   return { to: "", subject, html, text };
