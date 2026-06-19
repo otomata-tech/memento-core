@@ -321,6 +321,33 @@ export async function createOrg(sub: string, args: { name: string; slug?: string
   return { slug: o.slug, name: o.name, myRole: "admin" };
 }
 
+/**
+ * Renames an org (display name and/or slug). Org admin required. The slug is the
+ * stable handle used by orgSlug-addressed verbs (create/transfer/grant) — changing
+ * it is allowed but must stay globally unique; a collision is a hard error (no silent
+ * suffixing, unlike creation). A personal org's slug is locked (it backs `personal_for`).
+ */
+export async function updateOrg(sub: string, args: { orgSlug: string; name?: string; slug?: string }) {
+  const org = await orgBySlug(args.orgSlug);
+  await assertOrgAdmin(sub, org.id);
+
+  const patch: { name?: string; slug?: string } = {};
+  if (args.name?.trim()) patch.name = args.name.trim();
+  if (args.slug?.trim()) {
+    if (org.personalFor) throw new Error("a personal org's slug is locked");
+    const slug = slugify(args.slug.trim());
+    if (slug !== org.slug) {
+      const taken = await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.slug, slug)).limit(1);
+      if (taken.length) throw new Error(`slug already taken: ${slug}`);
+      patch.slug = slug;
+    }
+  }
+  if (!patch.name && !patch.slug) throw new Error("nothing to update (provide name and/or slug)");
+
+  const [o] = await db.update(orgs).set(patch).where(eq(orgs.id, org.id)).returning();
+  return { slug: o.slug, name: o.name, myRole: "admin" };
+}
+
 /** Deletes an EMPTY org (no KB, no member other than the caller) — fixes a mistake. */
 export async function deleteOrg(sub: string, args: { orgSlug: string }) {
   const org = await orgBySlug(args.orgSlug);

@@ -36,7 +36,7 @@ import { assertWithinLimit, RateLimitError } from "../_shared/ratelimit.ts";
 import { setDefaultWorkspace, pinWorkspace, unpinWorkspace } from "../_shared/prefs.ts";
 import { contextMap, wsContext, accessibleWorkspaceRefs } from "../_shared/context.ts";
 import { setDoctrine, updateWorkspace, archiveWorkspace } from "../_shared/workspace_mgmt.ts";
-import { listMyOrgs, createWorkspace, createOrg, transferWorkspace } from "../_shared/admin.ts";
+import { listMyOrgs, createWorkspace, createOrg, updateOrg, transferWorkspace } from "../_shared/admin.ts";
 import { listGrants, grantAccess, revokeGrant, setVisibility } from "../_shared/grants.ts";
 import { listAccounts } from "../_shared/platform.ts";
 // MCP v2 surface (#18): no more direct mutation verbs — every content write
@@ -313,6 +313,18 @@ function buildServer(sub: string): McpServer {
       slug: z.string().optional().describe("desired slug; default = derived from the name"),
     },
   }, guarded(async (args) => json(await createOrg(sub, args))));
+
+  server.registerTool("mem_update_org", {
+    description:
+      "Renames an org you administer: change its display `name` and/or its `slug` " +
+      "(the stable handle used by orgSlug-addressed verbs). Slug must stay globally unique — " +
+      "a collision errors (no silent suffixing). A personal org's slug is locked.",
+    inputSchema: {
+      org: z.string().describe("slug of the org to rename"),
+      name: z.string().optional().describe("new display name"),
+      slug: z.string().optional().describe("new slug (globally unique)"),
+    },
+  }, guarded(async (args) => json(await updateOrg(sub, { orgSlug: args.org, name: args.name, slug: args.slug }))));
 
   server.registerTool("mem_create_workspace", {
     description:

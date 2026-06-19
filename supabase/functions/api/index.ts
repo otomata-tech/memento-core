@@ -13,7 +13,7 @@ import { listRevisions } from "../_shared/revisions.ts";
 import { verifyBlock, attachSource, addComment, resolveComment } from "../_shared/write.ts";
 import { getIngestion, listIngestions, applyIngestion, rejectIngestion, requestChanges } from "../_shared/ingestion.ts";
 import {
-  listMyOrgs, removeMember, inviteMember, createWorkspace, createOrg, deleteOrg,
+  listMyOrgs, removeMember, inviteMember, createWorkspace, createOrg, updateOrg, deleteOrg,
   resendInvite, inviteLinkFor, transferWorkspace, ensureDefaultWorkspace, ensureAccount,
 } from "../_shared/admin.ts";
 import { getDefaultWorkspace, setDefaultWorkspace, listPins, pinWorkspace, unpinWorkspace } from "../_shared/prefs.ts";
@@ -158,6 +158,7 @@ async function mutationRoute(method: string, path: string, body: any, sub: strin
     case "POST /admin/invite/resend": return resendInvite(sub, body);
     case "POST /admin/invite/link": return inviteLinkFor(sub, body);
     case "POST /admin/orgs": return createOrg(sub, body);
+    case "POST /admin/orgs/update": return updateOrg(sub, body);
     case "DELETE /admin/orgs": return deleteOrg(sub, body);
     case "POST /admin/workspaces": return createWorkspace(sub, body);
     case "POST /admin/workspaces/transfer": return transferWorkspace(sub, body);
