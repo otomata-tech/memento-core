@@ -25,7 +25,7 @@ const mark = () => trustMark(props.block);
 
       <div v-if="block.sources.length" class="sources">
         <span class="src">
-          <a v-if="safeHref(block.sources[0].locator)" :href="safeHref(block.sources[0].locator)" target="_blank" rel="noopener" @click.stop>{{ block.sources[0].title }}</a>
+          <a v-if="safeHref(block.sources[0].ref) || safeHref(block.sources[0].locator)" :href="safeHref(block.sources[0].ref) || safeHref(block.sources[0].locator)" target="_blank" rel="noopener" @click.stop>{{ block.sources[0].title }}</a>
           <template v-else>{{ block.sources[0].title }}</template>
           <span v-if="block.sources[0].citation"> — {{ block.sources[0].citation }}</span>
           <span v-if="block.sources.length > 1"> · +{{ block.sources.length - 1 }}</span>

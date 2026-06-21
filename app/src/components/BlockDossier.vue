@@ -14,7 +14,7 @@ const err = ref<string | null>(null);
 const showSrc = ref(false);
 const showCmt = ref(false);
 const cmtBody = ref("");
-const form = reactive({ kind: "URL", title: "", citation: "", locator: "" });
+const form = reactive({ kind: "URL", title: "", ref: "", citation: "", locator: "" });
 
 async function verify() {
   busy.value = true; err.value = null;
@@ -31,8 +31,9 @@ async function addSource() {
   busy.value = true; err.value = null;
   try {
     await api.attachSource({ blockId: props.block.id, kind: form.kind, title: form.title.trim(),
+      ref: form.ref.trim() || undefined,
       citation: form.citation.trim() || undefined, locator: form.locator.trim() || undefined });
-    form.title = ""; form.citation = ""; form.locator = ""; showSrc.value = false;
+    form.title = ""; form.ref = ""; form.citation = ""; form.locator = ""; showSrc.value = false;
     toast("Source attached", "ok");
     emit("refresh");
   } catch (e) { err.value = msg(e); toast(err.value, "err"); }
@@ -79,8 +80,9 @@ function msg(e: unknown): string {
       <template v-if="block.sources.length">
         <div v-for="(s, i) in block.sources" :key="i" class="src-card" style="margin-bottom:6px">
           <span class="src">
-            <a v-if="safeHref(s.locator)" :href="safeHref(s.locator)" target="_blank" rel="noopener">{{ s.title }}</a>
+            <a v-if="safeHref(s.ref) || safeHref(s.locator)" :href="safeHref(s.ref) || safeHref(s.locator)" target="_blank" rel="noopener">{{ s.title }}</a>
             <template v-else>{{ s.title }}</template>
+            <span v-if="s.locator && !safeHref(s.locator)"> · {{ s.locator }}</span>
             <span v-if="s.citation"> — {{ s.citation }}</span>
           </span>
         </div>
@@ -89,8 +91,9 @@ function msg(e: unknown): string {
       <div v-if="showSrc" class="srcform">
         <select v-model="form.kind"><option>URL</option><option>FILE</option><option>MANUAL</option></select>
         <input v-model="form.title" placeholder="source title" />
-        <input v-model="form.citation" placeholder="citation (e.g. p.42)" />
-        <input v-model="form.locator" placeholder="link / locator (optional)" />
+        <input v-model="form.ref" placeholder="URL / link to the source" />
+        <input v-model="form.citation" placeholder="citation (e.g. quote)" />
+        <input v-model="form.locator" placeholder="locator — sub-location (e.g. tab, p.42)" />
         <div class="act">
           <button class="btn go" :disabled="busy" @click="addSource">save</button>
           <button class="btn" :disabled="busy" @click="showSrc = false">cancel</button>
