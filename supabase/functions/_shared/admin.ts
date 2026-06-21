@@ -5,8 +5,8 @@
  * email↔sub resolution via `auth.users` (same DATABASE_URL connection as the CLI).
  * Org creation / workspace assignment stay in the CLI (privileged, rare ops).
  */
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
-import { db, orgs, memberships, workspaces, workspaceGrants } from "./db.ts";
+import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { db, orgs, memberships, workspaces, workspaceGrants, documents, sections } from "./db.ts";
 import { AccessError, accessibleWorkspaceIds } from "./access.ts";
 import { slugify } from "./write.ts";
 import { assertWithinLimit } from "./ratelimit.ts";
@@ -348,16 +348,49 @@ export async function updateOrg(sub: string, args: { orgSlug: string; name?: str
   return { slug: o.slug, name: o.name, myRole: "admin" };
 }
 
-/** Deletes an EMPTY org (no KB, no member other than the caller) — fixes a mistake. */
+/**
+ * Hard-deletes an org's ARCHIVED workspaces (content first, FK-safe). Archiving is a soft
+ * delete and the `workspaces.org_id` FK is `restrict`, so an archived KB would otherwise block
+ * its org's deletion forever — and there is no user-facing hard-delete of a KB. This makes
+ * "archive the KB, then delete its org" actually work (the deleteOrg message promised it).
+ */
+async function purgeArchivedWorkspaces(orgId: string): Promise<void> {
+  const wss = await db.select({ id: workspaces.id }).from(workspaces)
+    .where(and(eq(workspaces.orgId, orgId), isNotNull(workspaces.archivedAt)));
+  for (const ws of wss) {
+    // documents → blocks/links/block_sources cascade from documents.
+    await db.delete(documents).where(
+      inArray(documents.sectionId, db.select({ id: sections.id }).from(sections).where(eq(sections.workspaceId, ws.id))),
+    );
+    // sections: parent_id is RESTRICT — delete leaves first, looping until none remain.
+    for (;;) {
+      const rows = await db.select({ id: sections.id, parentId: sections.parentId }).from(sections)
+        .where(eq(sections.workspaceId, ws.id));
+      if (!rows.length) break;
+      const parents = new Set(rows.map((r) => r.parentId).filter(Boolean) as string[]);
+      const leaves = rows.map((r) => r.id).filter((id) => !parents.has(id));
+      await db.delete(sections).where(inArray(sections.id, leaves.length ? leaves : rows.map((r) => r.id)));
+    }
+    // the workspace itself: revisions / ingestions / grants cascade from workspaces.
+    await db.delete(workspaces).where(eq(workspaces.id, ws.id));
+  }
+}
+
+/**
+ * Deletes an org once it owns no ACTIVE KB and has no member other than the caller — fixes a
+ * mistake. Archived KBs do NOT block (they are purged as part of deletion); only live ones do.
+ */
 export async function deleteOrg(sub: string, args: { orgSlug: string }) {
   const org = await orgBySlug(args.orgSlug);
   await assertOrgAdmin(sub, org.id);
-  const [ws, members] = await Promise.all([
-    db.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.orgId, org.id)).limit(1),
+  const [active, members] = await Promise.all([
+    db.select({ id: workspaces.id }).from(workspaces)
+      .where(and(eq(workspaces.orgId, org.id), isNull(workspaces.archivedAt))).limit(1),
     db.select({ u: memberships.userId }).from(memberships).where(eq(memberships.orgId, org.id)),
   ]);
-  if (ws.length) throw new Error("the org owns KBs — reassign or archive them first");
+  if (active.length) throw new Error("the org owns active KBs — archive or reassign them first");
   if (members.some((m) => m.u !== sub)) throw new Error("the org has other members — remove them first");
+  await purgeArchivedWorkspaces(org.id); // archived KBs are soft-deleted — remove them so the org can go
   await db.delete(orgs).where(eq(orgs.id, org.id)); // memberships cascade
   return { deleted: org.slug };
 }
