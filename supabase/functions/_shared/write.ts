@@ -54,9 +54,15 @@ export async function revise(
   reason: string, actor: string, before: unknown, after: unknown,
   ingestionId?: string,
 ): Promise<void> {
+  // `before`/`after` are jsonb-nullable. A bare JS null reaches postgres-js (prepare:false,
+  // Supavisor pooler) as an untyped parameter → Postgres "could not determine data type" → the
+  // whole INSERT fails. This bit delete_block (its `after` is null): the block row was already
+  // deleted by the caller, then this revision INSERT threw, losing the audit trail. Cast
+  // explicitly so a null is typed jsonb.
+  const jsonb = (v: unknown) => v == null ? sql`null::jsonb` : sql`${JSON.stringify(v)}::jsonb`;
   await db.insert(revisions).values({
     workspaceId, targetType, targetId, op, reason, actor, actorKind: "agent",
-    before: before ?? null, after: after ?? null, ingestionId: ingestionId ?? null,
+    before: jsonb(before), after: jsonb(after), ingestionId: ingestionId ?? null,
   });
 }
 
@@ -147,6 +153,9 @@ export async function updateBlock(
   const patch: Record<string, unknown> = {};
   if (args.content !== undefined) patch.content = args.content;
   if (args.type !== undefined) patch.type = args.type as any;
+  if (Object.keys(patch).length === 0) {
+    throw new Error("update_block: nothing to update — pass `content` and/or `type` (the text field is `content`, not `text`).");
+  }
   const [after] = await db.update(blocks).set(patch).where(eq(blocks.id, args.id)).returning();
   if (args.content !== undefined) await embedBlocks([{ id: after.id, content: after.content }]); // best-effort
   await revise(wsId, "block", args.id, "update", args.reason, actor, before, after, ctx?.ingestionId);

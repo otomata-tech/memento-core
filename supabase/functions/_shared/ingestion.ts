@@ -60,12 +60,28 @@ type Change = {
   edited?: boolean; editedBy?: string; // payload tweaked by a human before application
 };
 
-async function targetWorkspace(op: string, payload: Record<string, unknown>): Promise<string | null> {
+// Asserts the op's primary target lives in the ingestion's workspace. The id lives in
+// `payload[field]`, NOT the descriptive top-level `target` label. Distinguishes the three
+// failure modes — missing/misnamed field, unknown id, genuine cross-workspace — instead of
+// the blanket "target outside the ingestion's workspace" that hid all of them (the #1 footgun:
+// ids put in `target`, or fields named `text`/`blockId` instead of `content`/`id`).
+async function assertTargetInWorkspace(
+  op: string, payload: Record<string, unknown>, workspaceId: string,
+): Promise<void> {
   const t = TARGET[op];
-  if (!t) return null;
+  if (!t) return;
   const id = payload[t.field];
-  if (typeof id !== "string") return null;
-  return resolveWorkspaceId({ id, kind: t.kind });
+  if (typeof id !== "string" || !id) {
+    throw new Error(
+      `${op}: missing \`${t.field}\` in payload (operational ids go in payload, not the ` +
+      `descriptive top-level \`target\` label).`,
+    );
+  }
+  const wsId = await resolveWorkspaceId({ id, kind: t.kind });
+  if (wsId === null) throw new Error(`${op}: ${t.kind} \`${id}\` not found (\`${t.field}\`).`);
+  if (wsId !== workspaceId) {
+    throw new Error(`${op}: ${t.kind} \`${id}\` belongs to another workspace — cross-workspace mutation refused.`);
+  }
 }
 
 function counts(changes: Change[]) {
@@ -235,8 +251,7 @@ export async function applyIngestion(
     const edit = edits.get(c.id);
     if (edit) { c.payload = { ...c.payload, ...edit }; c.edited = true; c.editedBy = actor; }
     try {
-      const wsId = await targetWorkspace(c.op, c.payload);
-      if (wsId !== row.workspaceId) throw new Error("target outside the ingestion's workspace");
+      await assertTargetInWorkspace(c.op, c.payload, row.workspaceId);
       await OPS[c.op](c.payload, actor, { ingestionId: row.id });
       c.applied = true; c.appliedAt = new Date().toISOString(); delete c.error;
       results.push({ id: c.id, status: "applied" });
