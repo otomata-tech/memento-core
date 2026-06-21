@@ -252,10 +252,10 @@ load();
             <dt>Scope</dt><dd class="muted">An org = a sharing scope (mission, client, personal). Members see all its bases.</dd>
           </dl>
           <div v-if="isAdmin" class="danger-zone">
-            <template v-if="!org.workspaces.length && org.members.length <= 1">
-              <button class="link-danger" @click="deleteOrg">Delete this organization (empty)</button>
+            <template v-if="!org.workspaces.some((w) => !w.archived) && org.members.length <= 1">
+              <button class="link-danger" @click="deleteOrg">Delete this organization (purges archived bases)</button>
             </template>
-            <p v-else class="muted small">Deletion is only possible once the org has no base and no other member.</p>
+            <p v-else class="muted small">Deletion is only possible once the org has no active base and no other member.</p>
           </div>
         </section>
       </template>

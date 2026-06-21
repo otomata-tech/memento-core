@@ -85,7 +85,7 @@ export interface PlatformAccount {
 export interface AdminOrg {
   id: string; slug: string; name: string; myRole: string | null; personal: boolean;
   members: OrgMember[];
-  workspaces: { slug: string; name: string; visibility: "org" | "private" | "public" }[];
+  workspaces: { slug: string; name: string; visibility: "org" | "private" | "public"; archived: boolean }[];
 }
 export interface PublicWorkspace { slug: string; name: string; summary: string; org: string | null; orgName: string | null }
 export interface PublicSearchHit extends SearchHit { workspace: string | null; org: string | null; docTitle: string; url: string | null }

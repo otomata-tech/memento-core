@@ -134,7 +134,7 @@ export async function listMyOrgs(sub: string) {
     db.select().from(memberships).where(inArray(memberships.orgId, orgIds)),
     db.select({
       id: workspaces.id, orgId: workspaces.orgId, slug: workspaces.slug,
-      name: workspaces.name, visibility: workspaces.visibility,
+      name: workspaces.name, visibility: workspaces.visibility, archivedAt: workspaces.archivedAt,
     }).from(workspaces).where(and(
       inArray(workspaces.orgId, orgIds),
       or(
@@ -157,7 +157,7 @@ export async function listMyOrgs(sub: string) {
         })
         .sort((a, b) => (a.email ?? a.userId).localeCompare(b.email ?? b.userId)),
       workspaces: wsRows.filter((w) => w.orgId === o.id)
-        .map((w) => ({ slug: w.slug, name: w.name, visibility: w.visibility })),
+        .map((w) => ({ slug: w.slug, name: w.name, visibility: w.visibility, archived: !!w.archivedAt })),
     })),
   };
 }
