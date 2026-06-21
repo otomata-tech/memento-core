@@ -4,6 +4,13 @@ Knowledge substrate for agents, consumed via **MCP**. Typed blocks, sourced and 
 maintained by a propose-validate loop. See [`docs/principles.md`](docs/principles.md) for the why
 and [`docs/specs/knowledge-base.md`](docs/specs/knowledge-base.md) for the model + MCP surface.
 
+## Project context
+
+- **Open-core**: this repo is the canonical, **public** (Apache-2.0) home — development happens in the open. The pre-open-core private history is archived at `otomata-tech/memento-legacy`.
+- **How it's consumed**: an MCP connector (`mem_*` verbs, OAuth at `https://mcp.mento.cc/mcp`, doctrine-first) wired into claude.ai / ChatGPT / Mistral Le Chat.
+- **Companion**: `otomata-tech/memento-plugin` — Claude Code skills (`/memento:*`) for session-learning capture and propose-validate pushes to the KB.
+- Detailed prod deployment topology is operator-internal and lives outside this public doc.
+
 ## Stack
 
 - **Edge runtime (prod)**: Deno — `supabase/functions/{mcp,api}` over `_shared/` (db, auth, write, search, access). Auth via JWT (OAuth/OIDC). No LLM server-side: reads are deterministic; embeddings (optional) power hybrid search.
