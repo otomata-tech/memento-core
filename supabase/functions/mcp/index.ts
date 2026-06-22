@@ -92,9 +92,12 @@ GETTING STARTED (important — the server is stateless):
    only for member detail).
 
 doctrine-first PROTOCOL: on a targeted KB, mem_doctrine (preamble + tree + conventions)
-BEFORE any drill. Target 2-3 sections, then mem_section / mem_document / mem_block, or
-mem_search (hybrid: exact words + paraphrases). To READ/answer, never load
-the whole base (target). To WRITE, it's the opposite — see LOAD BEFORE WRITING.
+BEFORE any drill. Target 2-3 sections, then mem_section (unfold) / mem_document (a WHOLE
+document — all its blocks ordered, in ONE call) / mem_search (hybrid: exact words +
+paraphrases). A search hit carries its `docId` (and mem_block its `documentId`): to read
+the rest of that document, call mem_document(docId) — do NOT loop mem_block to reassemble a
+document block by block. mem_block is only for inspecting ONE isolated block. To READ/answer,
+never load the whole base (target). To WRITE, it's the opposite — see LOAD BEFORE WRITING.
 
 search vs enumeration ROUTING: mem_search is top-k, NEVER exhaustive. For
 "all / which ones / how many / what's new since" → mem_list / mem_count
@@ -410,7 +413,8 @@ function buildServer(sub: string): McpServer {
 
   server.registerTool("mem_document", {
     description:
-      "Renders a document: ordered blocks (id, type, content) + sources, links and comments per block. By `id` or `path`. " +
+      "Renders a WHOLE document IN ONE CALL: all its blocks ordered (id, type, content) + sources, links and comments per block. By `id` or `path`. " +
+      "This IS how you read a full document — don't fetch its blocks one by one with mem_block. " +
       "`document.url` = THE viewer link to give the human (specific block: append `?block=<id>`) — never craft a URL yourself.",
     inputSchema: idOrPath,
   }, guarded(async (args) => {
@@ -420,7 +424,8 @@ function buildServer(sub: string): McpServer {
 
   server.registerTool("mem_block", {
     description:
-      "Renders an isolated block with its sources, links (incoming + outgoing) and comments. To inspect a search hit. " +
+      "Renders ONE isolated block with its sources, links (incoming + outgoing) and comments — to inspect a single search hit. " +
+      "For the WHOLE document, call mem_document(documentId) instead (returns all blocks ordered, in one call) — NEVER loop mem_block to reassemble a document. " +
       "`url` = THE viewer link to give the human — never craft a URL yourself.",
     inputSchema: { id: z.string() },
   }, guarded(async ({ id }) => {
@@ -451,7 +456,7 @@ function buildServer(sub: string): McpServer {
       "THE search — hybrid by default: French full-text (exact words) + semantic (paraphrases, kNN embeddings), RRF fusion. Each hit: blockId, matchedBy, snippet/excerpt, doc, `url` (THE viewer link to give the human — never craft a URL), {workspace, org} + judgment metadata (docStatus, verifiedAt, updatedAt, sourceCount, superseded/contradicted). " +
       "Blocks of DEPRECATED documents are demoted (not excluded) — `includeDeprecated` for a pure ranking. `lexicalTotal` = true number of matches, `hasMore` indicates whether to broaden. CAUTION: top-k, never exhaustive — for \"all / how many / since\" → mem_list/mem_count. " +
       "`workspace` omitted = default KB; `\"*\"` = your WHOLE universe — your orgs + shared KB + pinned public KB (\"where did I note that?\" — `sectionPath` is refused there). `likeBlockId` (instead of `q`) = blocks close to an anchor block (dedup, link suggestions, ingestion targeting). " +
-      "`mode` lexical|semantic to force a single regime (rarely useful). If embedding is unavailable, degrades to lexical and flags it (`modes`). Drill in afterward with mem_block.",
+      "`mode` lexical|semantic to force a single regime (rarely useful). If embedding is unavailable, degrades to lexical and flags it (`modes`). Drill in afterward: mem_document(hit.docId) for the hit's full document (don't loop mem_block), or mem_block for that single block.",
     inputSchema: {
       q: z.string().optional().describe("text query (keywords or phrase — both regimes feed on it)"),
       likeBlockId: z.string().optional().describe("anchor block: returns the semantically close blocks (excludes q)"),
