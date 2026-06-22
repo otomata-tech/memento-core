@@ -79,3 +79,11 @@ export function denyConsent(): void {
   consent.value = "denied";
   if (enabled) posthog.opt_out_capturing();
 }
+
+// Withdraw/revise consent (GDPR: withdrawing must be as easy as giving). Clears
+// the decision → the banner reappears; the effective opt state stays until the
+// next choice (grant/deny).
+export function reopenConsent(): void {
+  if (typeof localStorage !== "undefined") localStorage.removeItem(CONSENT_KEY);
+  consent.value = null;
+}

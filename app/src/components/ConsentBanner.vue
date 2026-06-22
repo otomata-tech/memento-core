@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { analyticsEnabled, consent, grantConsent, denyConsent } from "../lib/analytics";
+import { analyticsEnabled, consent, grantConsent, denyConsent, reopenConsent } from "../lib/analytics";
 
 // Shown only when analytics is active (key present) AND no choice has been made.
 // In dev (no key) or after a decision: nothing.
 const show = computed(() => analyticsEnabled() && consent.value === null);
+// Withdrawal trigger (GDPR): visible once a choice is made; reopens the banner.
+const showReopen = computed(() => analyticsEnabled() && consent.value !== null);
 </script>
 
 <template>
@@ -23,6 +25,7 @@ const show = computed(() => analyticsEnabled() && consent.value === null);
       </div>
     </div>
   </Transition>
+  <button v-if="showReopen" type="button" class="oconsent-reopen" @click="reopenConsent">cookies</button>
 </template>
 
 <style scoped>
@@ -74,4 +77,22 @@ const show = computed(() => analyticsEnabled() && consent.value === null);
 .oconsent-leave-active { transition: opacity 200ms ease, transform 200ms ease; }
 .oconsent-enter-from,
 .oconsent-leave-to { opacity: 0; transform: translateY(8px); }
+/* Discreet, persistent withdrawal trigger once a choice is made. */
+.oconsent-reopen {
+  position: fixed;
+  left: 14px;
+  bottom: 12px;
+  z-index: 150;
+  appearance: none;
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  padding: 4px 6px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--color-mute);
+  opacity: 0.6;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+.oconsent-reopen:hover { opacity: 1; color: var(--color-ink); text-decoration: underline; }
 </style>
