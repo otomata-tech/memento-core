@@ -13,8 +13,6 @@ import { ref } from "vue";
 // rather than shared. Keep both in sync if the consent logic changes.
 
 const KEY = import.meta.env.VITE_POSTHOG_KEY as string | undefined;
-const HOST =
-  (import.meta.env.VITE_POSTHOG_HOST as string | undefined) || "https://eu.i.posthog.com";
 
 const CONSENT_KEY = "oto-analytics-consent";
 type Consent = "granted" | "denied";
@@ -35,7 +33,11 @@ export function analyticsEnabled(): boolean {
 export function initAnalytics(): void {
   if (!KEY) return;
   posthog.init(KEY, {
-    api_host: HOST,
+    // First-party reverse proxy: me.mento.cc/ingest → PostHog EU (CF Pages
+    // Function functions/ingest), beats ad-blockers. mento.cc apex uses the
+    // oto-websites build (Caddy proxy) — same /ingest contract.
+    api_host: `${location.origin}/ingest`,
+    ui_host: "https://eu.posthog.com",
     // SPA pageviews captured automatically (no router hook needed).
     capture_pageview: "history_change",
     // Anonymous showcase visitors create no profile; app users get one on identify.
