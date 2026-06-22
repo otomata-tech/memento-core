@@ -18,6 +18,7 @@ import { db, ingestions, workspaces, orgs } from "./db.ts";
 import { loopUrl } from "./urls.ts";
 import { broadcastInbox } from "./realtime.ts";
 import { resolveWorkspaceId } from "./access.ts";
+import { resolveSectionIdInWorkspace } from "./paths.ts";
 import { nearDuplicates } from "./semantic.ts";
 import {
   addDocument, addBlock, updateBlock, setBlockType, deleteBlock,
@@ -61,23 +62,47 @@ type Change = {
   edited?: boolean; editedBy?: string; // payload tweaked by a human before application
 };
 
+// Fills operational ids an agent expressed as a human path, in the ingestion's workspace.
+// Today: `add_document`'s `sectionId` resolved from `sectionPath` (exact path match). Lets an
+// agent target a section by readable path instead of the raw id; the strict id check
+// (buildChanges at stage, assertTargetInWorkspace at apply) still fires if nothing resolves.
+// Mutates payloads in place. Idempotent (no-op once `sectionId` is set).
+async function resolvePathTargets(
+  changes: Array<{ op: string; payload?: Record<string, unknown> }>,
+  workspaceId: string, workspaceSlug: string,
+): Promise<void> {
+  for (const c of changes) {
+    const p = c.payload;
+    if (!p) continue;
+    if (c.op === "add_document" && !p.sectionId && typeof p.sectionPath === "string") {
+      const id = await resolveSectionIdInWorkspace(workspaceId, workspaceSlug, p.sectionPath);
+      if (id) p.sectionId = id;
+    }
+  }
+}
+
 // Asserts the op's primary target lives in the ingestion's workspace. The id lives in
 // `payload[field]`, NOT the descriptive top-level `target` label. Distinguishes the three
 // failure modes — missing/misnamed field, unknown id, genuine cross-workspace — instead of
 // the blanket "target outside the ingestion's workspace" that hid all of them (the #1 footgun:
 // ids put in `target`, or fields named `text`/`blockId` instead of `content`/`id`).
+// Shared message for the #1 footgun (op's operational id absent from payload). add_document also
+// accepts a resolvable `sectionPath` (filled into `sectionId` by resolvePathTargets before this).
+function missingTargetError(op: string, field: string): Error {
+  const alt = op === "add_document" ? " (or a resolvable `sectionPath`)" : "";
+  return new Error(
+    `${op}: missing \`${field}\`${alt} in payload (operational ids go in payload, not the ` +
+    `descriptive top-level \`target\` label).`,
+  );
+}
+
 async function assertTargetInWorkspace(
   op: string, payload: Record<string, unknown>, workspaceId: string,
 ): Promise<void> {
   const t = TARGET[op];
   if (!t) return;
   const id = payload[t.field];
-  if (typeof id !== "string" || !id) {
-    throw new Error(
-      `${op}: missing \`${t.field}\` in payload (operational ids go in payload, not the ` +
-      `descriptive top-level \`target\` label).`,
-    );
-  }
+  if (typeof id !== "string" || !id) throw missingTargetError(op, t.field);
   const wsId = await resolveWorkspaceId({ id, kind: t.kind });
   if (wsId === null) throw new Error(`${op}: ${t.kind} \`${id}\` not found (\`${t.field}\`).`);
   if (wsId !== workspaceId) {
@@ -120,12 +145,7 @@ function buildChanges(input: Array<{ op: string; class?: string; target?: string
     const t = TARGET[c.op];
     if (t) {
       const id = (c.payload ?? {})[t.field];
-      if (typeof id !== "string" || !id) {
-        throw new Error(
-          `${c.op}: missing \`${t.field}\` in payload (operational ids go in payload, not the ` +
-          `descriptive top-level \`target\` label).`,
-        );
-      }
+      if (typeof id !== "string" || !id) throw missingTargetError(c.op, t.field);
     }
     return {
       id: crypto.randomUUID(), op: c.op, class: c.class ?? "ENRICH",
@@ -147,6 +167,10 @@ export async function stageChanges(
     .where(eq(workspaces.slug, args.workspace)).limit(1);
   if (!ws) throw new Error(`Workspace not found: ${args.workspace}`);
   if (!args.changes?.length) throw new Error("`changes` is empty");
+
+  // Resolve path-style targets (e.g. add_document `sectionPath` → `sectionId`) before the strict
+  // id check in buildChanges — so an agent can target a section by readable path.
+  await resolvePathTargets(args.changes, ws.id, ws.slug);
 
   // Idempotence (#44) + supersession (ping-pong): same clientKey, same workspace.
   if (args.clientKey) {
@@ -296,6 +320,8 @@ export async function applyIngestion(
     const edit = edits.get(c.id);
     if (edit) { c.payload = { ...c.payload, ...edit }; c.edited = true; c.editedBy = actor; }
     try {
+      // Late path→id resolution for ingestions staged before this existed (legacy sectionPath).
+      await resolvePathTargets([c], row.workspaceId, slug);
       await assertTargetInWorkspace(c.op, c.payload, row.workspaceId);
       // Thread the change's rationale as the revision `reason` when the payload omits one, so the
       // audit log records *why* the op ran (and never an empty reason). An explicit payload.reason

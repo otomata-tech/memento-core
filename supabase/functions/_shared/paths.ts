@@ -113,6 +113,26 @@ export async function loadSectionPathMap(
  * `sectionPath` filter — lexical AND semantic, same sections for both
  * regimes. Prefix with no match → empty list (zero hits, not an error).
  */
+/**
+ * Resolves a readable `sectionPath` to a section id WITHIN the given workspace, else null.
+ * Tolerant of a path with or without the leading workspace-slug prefix
+ * (`prospection` ≡ `otomata-business/prospection`); never crosses into another workspace.
+ * Used to fill `add_document`'s `sectionId` when an agent targets a section by path, not raw id.
+ */
+export async function resolveSectionIdInWorkspace(
+  workspaceId: string,
+  workspaceSlug: string,
+  sectionPath: string,
+): Promise<string | null> {
+  const raw = sectionPath.trim().replace(/^\/+|\/+$/g, "");
+  if (!raw) return null;
+  const full = raw === workspaceSlug || raw.startsWith(`${workspaceSlug}/`) ? raw : `${workspaceSlug}/${raw}`;
+  try {
+    const { workspace, section } = await resolveSectionByPath(full);
+    return workspace.id === workspaceId ? section.id : null;
+  } catch { return null; }
+}
+
 export async function resolveSectionIds(
   workspaceId: string,
   workspaceSlug: string,
