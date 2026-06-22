@@ -112,7 +112,20 @@ defineExpose({ reloadShell: loadShell });
 <template>
   <div class="ed">
     <div class="top">
-      <div class="brand" @click="go('/')" title="Accueil">Memento<small>{{ ws || currentOrg?.slug || "" }}</small></div>
+      <div class="brand" @click="go('/')" title="Accueil">
+        <svg class="brand-mark" viewBox="-64 -64 128 128" aria-hidden="true">
+          <defs>
+            <radialGradient id="mlogo" cx="38%" cy="32%" r="78%">
+              <stop offset="0%" stop-color="#4f9be0" />
+              <stop offset="55%" stop-color="#1f6dba" />
+              <stop offset="100%" stop-color="#124a80" />
+            </radialGradient>
+          </defs>
+          <path d="M-44 14 Q -22 -34, 0 2 T 44 -10" fill="none" stroke="url(#mlogo)" stroke-width="12" stroke-linecap="round" />
+        </svg>
+        <span class="brand-word">Memento</span>
+        <small>{{ ws || currentOrg?.slug || "" }}</small>
+      </div>
       <div class="nav" v-if="ws">
         <a :class="{ on: page === 'reader' }" @click="go(`/w/${ws}`)">Read</a>
         <a :class="{ on: page === 'graph' }" @click="go(`/w/${ws}/graph`)">Graph</a>
