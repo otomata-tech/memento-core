@@ -594,8 +594,8 @@ function buildServer(sub: string): McpServer {
   }));
 
   server.registerTool("mem_rename_section", {
-    description: "Renames a section (title and/or summary). The slug stays stable (paths don't break).",
-    inputSchema: { id: z.string(), title: z.string().optional(), summary: z.string().optional() },
+    description: "Renames a section (title and/or summary). By default the slug stays stable (paths don't break); pass `slug` to deliberately re-slug it (slugified + deduped — CHANGES the path).",
+    inputSchema: { id: z.string(), title: z.string().optional(), summary: z.string().optional(), slug: z.string().optional() },
   }, guarded(async (args) => {
     await assertAccess(sub, { id: args.id, kind: "section" }, { write: true });
     return json(await renameSection(args, sub));

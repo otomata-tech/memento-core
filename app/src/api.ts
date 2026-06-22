@@ -144,8 +144,8 @@ export const api = {
   // ── Structure (curator/admin) — REST mirror of the restructure verbs ──
   createSection: (input: { workspace: string; parentId?: string; title: string; summary?: string }) =>
     send<{ id: string; slug: string; title: string }>("POST", "/section/create", input),
-  renameSection: (input: { id: string; title?: string; summary?: string }) =>
-    send<{ id: string; title: string; summary: string }>("POST", "/section/rename", input),
+  renameSection: (input: { id: string; title?: string; summary?: string; slug?: string }) =>
+    send<{ id: string; title: string; summary: string; slug: string }>("POST", "/section/rename", input),
   reorder: (input: { parentId?: string; orderedChildIds: string[] }) =>
     send<{ reordered: string; count: number }>("POST", "/section/reorder", input),
   createDocument: (input: { sectionId: string; title: string; summary?: string; kind?: string; blocks?: string; reason?: string }) =>

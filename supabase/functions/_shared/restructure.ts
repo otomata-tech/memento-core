@@ -67,16 +67,24 @@ export async function createSection(
   return row;
 }
 
-export async function renameSection(args: { id: string; title?: string; summary?: string }, actor: string) {
+export async function renameSection(args: { id: string; title?: string; summary?: string; slug?: string }, actor: string) {
   const s = await sectionRow(args.id);
   const patch: Partial<Sec> = {};
   if (args.title !== undefined) patch.title = args.title;
   if (args.summary !== undefined) patch.summary = args.summary;
-  if (Object.keys(patch).length === 0) throw new Error("nothing to change (title and/or summary)");
+  // Optional explicit re-slug (opt-in — CHANGES the section's path). Slugified + deduped
+  // against siblings (workspace,parent). By default (no `slug`) the slug stays stable so
+  // existing links don't break — that's why renaming the title alone never touches it.
+  if (args.slug !== undefined) {
+    const siblings = await db.select({ id: sections.id, slug: sections.slug }).from(sections)
+      .where(s.parentId ? eq(sections.parentId, s.parentId) : and(eq(sections.workspaceId, s.workspaceId), sql`${sections.parentId} is null`));
+    const taken = new Set(siblings.filter((x) => x.id !== s.id).map((x) => x.slug));
+    patch.slug = dedupeSlug(slugify(args.slug), taken);
+  }
+  if (Object.keys(patch).length === 0) throw new Error("nothing to change (title, summary and/or slug)");
   const [after] = await db.update(sections).set(patch).where(eq(sections.id, args.id)).returning();
-  // stable slug (paths don't break).
   await revise(s.workspaceId, "section", args.id, "rename_section", "rename section", actor,
-    { title: s.title, summary: s.summary }, { title: after.title, summary: after.summary });
+    { title: s.title, summary: s.summary, slug: s.slug }, { title: after.title, summary: after.summary, slug: after.slug });
   return after;
 }
 

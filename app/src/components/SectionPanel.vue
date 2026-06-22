@@ -16,7 +16,7 @@ const emit = defineEmits<{
 
 const busy = ref(false);
 const mode = ref<"" | "rename" | "subsection" | "document">("");
-const form = reactive({ title: "", summary: "" });
+const form = reactive({ title: "", summary: "", slug: "" });
 // Pending destructive action (rendered as a ConfirmModal — never a native dialog).
 const confirm = ref<{ kind: "doc" | "section"; id: string; title: string; message: string } | null>(null);
 // Pending cross-KB move (rendered as a MovePicker modal).
@@ -39,6 +39,7 @@ function openForm(m: "rename" | "subsection" | "document") {
   mode.value = m;
   form.title = m === "rename" ? props.section.section.title : "";
   form.summary = m === "rename" ? props.section.section.summary : "";
+  form.slug = m === "rename" ? props.section.section.slug : "";
 }
 
 async function submit() {
@@ -48,8 +49,10 @@ async function submit() {
     const title = form.title.trim();
     const summary = form.summary.trim();
     if (mode.value === "rename") {
-      await api.renameSection({ id: props.section.section.id, title, summary });
-      toast("Section renamed", "ok");
+      // Pass slug only when it actually changed (default = keep the path stable).
+      const slug = form.slug.trim() && form.slug.trim() !== props.section.section.slug ? form.slug.trim() : undefined;
+      await api.renameSection({ id: props.section.section.id, title, summary, slug });
+      toast(slug ? "Section renamed (slug changed)" : "Section renamed", "ok");
     } else if (mode.value === "subsection") {
       await api.createSection({ workspace: props.ws, parentId: props.section.section.id, title, summary: summary || undefined });
       toast("Sub-section created", "ok");
@@ -113,7 +116,7 @@ async function doDelete() {
 
 <template>
   <div class="doc">
-    <div class="eb">Section</div>
+    <div class="eb">Section · <span class="sec-slug">{{ section.section.slug }}</span></div>
     <h1 class="title">{{ section.section.title }}</h1>
     <div v-if="section.section.summary" class="summary">{{ section.section.summary }}</div>
 
@@ -128,6 +131,7 @@ async function doDelete() {
     <div v-if="mode" class="srcform sect-form">
       <input v-model="form.title" :placeholder="mode === 'rename' ? 'section title' : (mode === 'subsection' ? 'sub-section title' : 'document title')" />
       <textarea v-model="form.summary" rows="2" placeholder="summary (optional)"></textarea>
+      <input v-if="mode === 'rename'" v-model="form.slug" placeholder="slug — URL identifier (e.g. mariage)" />
       <div class="act">
         <button class="btn go" :disabled="busy" @click="submit">save</button>
         <button class="btn" :disabled="busy" @click="mode = ''">cancel</button>
@@ -177,4 +181,5 @@ async function doDelete() {
 .btn.mini { font-size: 11px; padding: 3px 8px; }
 .btn.mini:first-of-type { margin-left: auto; }
 .btn.del { color: var(--color-weak-ink, #b04); border-color: var(--color-weak-ink, #b04); }
+.sec-slug { font-family: var(--font-mono); text-transform: none; letter-spacing: 0; opacity: .65; }
 </style>
