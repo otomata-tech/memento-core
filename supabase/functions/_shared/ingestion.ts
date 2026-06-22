@@ -113,6 +113,19 @@ function buildChanges(input: Array<{ op: string; class?: string; target?: string
   return input.map((c) => {
     if (!OPS[c.op]) throw new Error(`unknown op: ${c.op} (expected: ${Object.keys(OPS).join(", ")})`);
     if (c.class && !CLASSES.includes(c.class)) throw new Error(`invalid class: ${c.class} (expected: ${CLASSES.join(", ")})`);
+    // Catch the #1 footgun at STAGE time, not just at apply: the op's operational id must live in
+    // `payload`, not in the descriptive top-level `target` label. Cheap presence check (existence
+    // and cross-workspace are still verified at apply via assertTargetInWorkspace).
+    const t = TARGET[c.op];
+    if (t) {
+      const id = (c.payload ?? {})[t.field];
+      if (typeof id !== "string" || !id) {
+        throw new Error(
+          `${c.op}: missing \`${t.field}\` in payload (operational ids go in payload, not the ` +
+          `descriptive top-level \`target\` label).`,
+        );
+      }
+    }
     return {
       id: crypto.randomUUID(), op: c.op, class: c.class ?? "ENRICH",
       target: c.target ?? null, rationale: c.rationale ?? null,
