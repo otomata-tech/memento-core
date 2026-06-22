@@ -10,7 +10,7 @@ import { getSection } from "../_shared/sections.ts";
 import { getDocument, getBlock } from "../_shared/documents.ts";
 import { searchBlocks, searchPublic } from "../_shared/search.ts";
 import { listRevisions } from "../_shared/revisions.ts";
-import { verifyBlock, attachSource, addComment, resolveComment, addDocument, deprecateDocument, restoreDocument, deleteDocument } from "../_shared/write.ts";
+import { verifyBlock, attachSource, addComment, resolveComment, addDocument, deprecateDocument, restoreDocument, deleteDocument, updateBlock } from "../_shared/write.ts";
 import { createSection, renameSection, reorder, moveDocuments, deleteSectionCascade, moveDocumentsCrossWorkspace, moveSectionCrossWorkspace } from "../_shared/restructure.ts";
 import { getIngestion, listIngestions, applyIngestion, rejectIngestion, requestChanges } from "../_shared/ingestion.ts";
 import {
@@ -200,6 +200,9 @@ async function mutationRoute(method: string, path: string, body: any, sub: strin
     case "POST /block/verify":
       await assertAccess(sub, { id: body.id, kind: "block" }, { write: true });
       return verifyBlock(body, sub);
+    case "POST /block/update":
+      await assertAccess(sub, { id: body.id, kind: "block" }, { write: true });
+      return updateBlock(body, sub);
     case "POST /block/source":
       await assertAccess(sub, { id: body.blockId, kind: "block" }, { write: true });
       return attachSource(body, sub);

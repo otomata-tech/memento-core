@@ -129,6 +129,8 @@ export const api = {
   verifyBlock: (id: string, verified = true, reason?: string) =>
     send<{ id: string; verifiedAt: string | null; verifiedBy: string | null }>(
       "POST", "/block/verify", { id, verified, reason }),
+  updateBlock: (input: { id: string; content?: string; type?: string; reason?: string }) =>
+    send<{ id: string; content: string; type: string }>("POST", "/block/update", { reason: "edited from viewer", ...input }),
   attachSource: (input: { blockId: string; kind: string; title: string; ref?: string; citation?: string; locator?: string; reason?: string }) =>
     send<{ blockId: string; sourceId: string }>("POST", "/block/source", input),
   addComment: (input: { targetType: string; targetId: string; body: string; authorKind?: string }) =>

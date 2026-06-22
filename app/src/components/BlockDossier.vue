@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Provenance dossier of the focused block: sources, links, comments, history,
 // + curated action bar (✓ verify · ＋ source · ⌗ graph). Live writes.
-import { reactive, ref } from "vue";
+import { reactive, ref, watch } from "vue";
 import { api, type Block, type Revision } from "../api";
 import { roleClass, trustMark, RELLABEL, RELGLYPH, relClass, safeHref } from "../lib/blocks";
 import { toast } from "../lib/toast";
@@ -13,8 +13,26 @@ const busy = ref(false);
 const err = ref<string | null>(null);
 const showSrc = ref(false);
 const showCmt = ref(false);
+const showEdit = ref(false);
 const cmtBody = ref("");
 const form = reactive({ kind: "URL", title: "", ref: "", citation: "", locator: "" });
+const edit = reactive({ content: "", type: "" });
+const BLOCK_TYPES = ["PROSE", "PRINCIPE", "REGLE", "EXCEPTION", "EXEMPLE", "PROCEDURE", "MISE_EN_GARDE", "DEFINITION", "QUESTION", "PROMPT_PORTEUR", "PROMPT_SYSTEME"];
+
+// Reset the open panels when the focused block changes (avoid stale edit content).
+watch(() => props.block.id, () => { showEdit.value = false; showSrc.value = false; showCmt.value = false; });
+
+function startEdit() { edit.content = props.block.content; edit.type = props.block.type; showEdit.value = true; }
+async function saveEdit() {
+  busy.value = true; err.value = null;
+  try {
+    await api.updateBlock({ id: props.block.id, content: edit.content, type: edit.type });
+    toast("Block updated", "ok");
+    showEdit.value = false;
+    emit("refresh");
+  } catch (e) { err.value = msg(e); toast(err.value, "err"); }
+  finally { busy.value = false; }
+}
 
 async function verify() {
   busy.value = true; err.value = null;
@@ -72,6 +90,18 @@ function msg(e: unknown): string {
       <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
         <span class="badge">{{ block.type }}</span>
         <span class="vmark" :class="trustMark(block)[0]">{{ trustMark(block)[1] }}</span>
+      </div>
+    </div>
+
+    <div v-if="showEdit" class="seg">
+      <div class="eb">Edit block</div>
+      <div class="srcform">
+        <select v-model="edit.type"><option v-for="t in BLOCK_TYPES" :key="t" :value="t">{{ t }}</option></select>
+        <textarea v-model="edit.content" rows="10" placeholder="block content (markdown)"></textarea>
+        <div class="act">
+          <button class="btn go" :disabled="busy" @click="saveEdit">save</button>
+          <button class="btn" :disabled="busy" @click="showEdit = false">cancel</button>
+        </div>
       </div>
     </div>
 
@@ -145,6 +175,7 @@ function msg(e: unknown): string {
     <p v-if="err" class="warn-card" style="margin-bottom:10px">{{ err }}</p>
     <div class="act">
       <button class="btn go" :disabled="busy" @click="verify">{{ block.verifiedAt ? "↺ unverify" : "✓ verify" }}</button>
+      <button class="btn" :disabled="busy" @click="showEdit ? (showEdit = false) : startEdit()">✎ edit</button>
       <button class="btn" :disabled="busy" @click="showSrc = !showSrc">＋ source</button>
       <button class="btn" :disabled="busy" @click="showCmt = !showCmt">＋ comment</button>
       <button class="btn" @click="emit('graph', block.id)">⌗ graph</button>
