@@ -5,7 +5,7 @@
  * Authorization (admin/curator member of the owning org) is checked upstream by the
  * handlers via assertAccess(..., { write: true }).
  */
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { embedBlocks, nearDuplicates } from "./semantic.ts";
 import { db, documents, blocks, sections, revisions, sources, blockSources, links, comments } from "./db.ts";
 import { workspaceIdForTarget } from "./access.ts";
@@ -322,6 +322,39 @@ export async function deprecateDocument(
   const [after] = await db.update(documents).set({ status: "DEPRECATED" }).where(eq(documents.id, args.id)).returning();
   await revise(wsId, "document", args.id, "deprecate", args.reason, actor, { status: before.status }, { status: "DEPRECATED", supersededBy: args.supersededBy ?? null }, ctx?.ingestionId);
   return { id: args.id, status: after.status, supersededBy: args.supersededBy ?? null };
+}
+
+/** Restores a DEPRECATED document back to ACTIVE (the inverse of deprecateDocument). */
+export async function restoreDocument(args: { id: string; reason?: string }, actor: string, ctx?: WriteCtx) {
+  const wsId = await workspaceIdForTarget("document", args.id);
+  if (!wsId) throw new Error(`Document not found: ${args.id}`);
+  const [before] = await db.select().from(documents).where(eq(documents.id, args.id)).limit(1);
+  const [after] = await db.update(documents).set({ status: "ACTIVE" }).where(eq(documents.id, args.id)).returning();
+  await revise(wsId, "document", args.id, "restore", args.reason ?? "restore document", actor, { status: before.status }, { status: "ACTIVE" }, ctx?.ingestionId);
+  return { id: args.id, status: after.status };
+}
+
+/**
+ * HARD-deletes a document. Its blocks cascade via FK (`blocks.document_id`
+ * onDelete cascade → block_sources, links). Comments are polymorphic (no FK) so we
+ * purge them explicitly — on the document itself AND on each of its blocks (whose ids
+ * must be read BEFORE the cascade removes them). Irreversible; the revision is the
+ * only trace left. Distinct from deprecateDocument (soft, reversible).
+ */
+export async function deleteDocument(args: { id: string; reason?: string }, actor: string, ctx?: WriteCtx) {
+  const wsId = await workspaceIdForTarget("document", args.id);
+  if (!wsId) throw new Error(`Document not found: ${args.id}`);
+  const [before] = await db.select().from(documents).where(eq(documents.id, args.id)).limit(1);
+  const blockIds = (await db.select({ id: blocks.id }).from(blocks).where(eq(blocks.documentId, args.id))).map((b) => b.id);
+  // Polymorphic comments (no FK): remove the document's, and each block's, before the cascade.
+  await db.delete(comments).where(and(eq(comments.targetType, "DOCUMENT"), eq(comments.targetId, args.id)));
+  if (blockIds.length) {
+    await db.delete(comments).where(and(eq(comments.targetType, "BLOCK"), inArray(comments.targetId, blockIds)));
+  }
+  await db.delete(documents).where(eq(documents.id, args.id)); // cascade: blocks → block_sources, links
+  await revise(wsId, "document", args.id, "delete", args.reason ?? `delete document "${before.title}"`, actor,
+    { title: before.title, slug: before.slug, blocks: blockIds.length }, null, ctx?.ingestionId);
+  return { deleted: args.id, blocks: blockIds.length };
 }
 
 /** Deletes a typed link between two blocks. */

@@ -4,9 +4,10 @@
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { supabase } from "../auth";
-import { api, type Doctrine, type DocumentView, type DocMeta, type Revision, type SearchResult } from "../api";
+import { api, type Doctrine, type DocumentView, type DocMeta, type Revision, type SearchResult, type SectionView } from "../api";
 import AppShell from "../components/AppShell.vue";
 import SectionSpine from "../components/SectionSpine.vue";
+import SectionPanel from "../components/SectionPanel.vue";
 import BlockRow from "../components/BlockRow.vue";
 import BlockDossier from "../components/BlockDossier.vue";
 import DoctrinePanel from "../components/DoctrinePanel.vue";
@@ -20,6 +21,7 @@ const doctrine = ref<Doctrine | null>(null);
 const revisions = ref<Revision[]>([]);
 const activeSectionId = ref<string | null>(null);
 const sectionDocs = ref<DocMeta[]>([]);
+const sectionView = ref<SectionView | null>(null);
 const doc = ref<DocumentView | null>(null);
 const focusedId = ref<string | null>(null);
 const searchMode = ref(false);
@@ -55,15 +57,16 @@ const deprecated = computed(() => doc.value?.document.status === "DEPRECATED");
 
 function firstSectionId(): string | null { return doctrine.value?.tree[0]?.id ?? null; }
 
+/** Clicking a section now opens the section PAGE (its docs + subsections),
+ *  no longer catapulting to the first document. */
 function selectSection(id: string) {
-  if (id === activeSectionId.value && doc.value) return;
-  loadSection(id, /*navigate*/ true);
+  if (route.path === `/w/${ws.value}/section/${id}`) return;
+  router.push(`/w/${ws.value}/section/${id}`);
 }
-async function loadSection(id: string, navigate: boolean) {
+/** Loads the spine's sub-rows (documents of the active section). */
+async function loadSectionDocs(id: string) {
   activeSectionId.value = id;
-  const s = await api.section(id);
-  sectionDocs.value = s.documents;
-  if (navigate && s.documents.length) router.push(`/w/${ws.value}/doc/${s.documents[0].id}`);
+  sectionDocs.value = (await api.section(id)).documents;
 }
 function openDoc(id: string) { router.push(`/w/${ws.value}/doc/${id}`); }
 function focusBlock(id: string) {
@@ -74,6 +77,21 @@ async function reloadDoc() {
   if (!doc.value) return;
   doc.value = await api.document(doc.value.document.id);
   revisions.value = await loadRevisions(ws.value);
+}
+/** After a structural change on the section page: refresh the section AND the
+ *  doctrine tree (so the spine reflects new/renamed sections + counts). */
+async function reloadSection() {
+  if (!sectionView.value) return;
+  const sid = sectionView.value.section.id;
+  [sectionView.value, doctrine.value] = await Promise.all([api.section(sid), api.doctrine(ws.value)]);
+  sectionDocs.value = sectionView.value.documents;
+}
+/** The current section was hard-deleted: refresh the tree and jump to the first
+ *  remaining section (or the KB root if none is left). */
+async function onSectionDeleted() {
+  doctrine.value = await api.doctrine(ws.value);
+  const sid = firstSectionId();
+  router.push(sid ? `/w/${ws.value}/section/${sid}` : `/w/${ws.value}`);
 }
 
 async function syncFromRoute() {
@@ -89,7 +107,7 @@ async function syncFromRoute() {
       isPublicKb.value = await api.public.workspaces()
         .then((list) => list.some((w) => w.slug === nextWs)).catch(() => false);
       isLoggedIn.value = !!(await supabase.auth.getSession()).data.session;
-      sectionDocs.value = []; activeSectionId.value = null; doc.value = null;
+      sectionDocs.value = []; activeSectionId.value = null; doc.value = null; sectionView.value = null;
     }
 
     // Search mode
@@ -101,20 +119,30 @@ async function syncFromRoute() {
     }
     searchMode.value = false;
 
+    // Section page: /w/:ws/section/:id — list docs + subsections (the "map" of a zone).
+    if (route.path.includes("/section/")) {
+      const sid = route.params.id as string;
+      doc.value = null;
+      sectionView.value = await api.section(sid);
+      activeSectionId.value = sid;
+      sectionDocs.value = sectionView.value.documents;
+      return;
+    }
+
     const docId = route.params.id as string | undefined;
     const path = route.query.path as string | undefined;
     if (!docId && !path) {
+      // bare /w/:ws → land on the section map (first section page), not inside a document.
       const sid = firstSectionId();
-      if (sid) await loadSection(sid, true); // navigate to the 1st doc
+      if (sid) router.replace(`/w/${ws.value}/section/${sid}`);
       return;
     }
+    // Document page
+    sectionView.value = null;
     if (path || doc.value?.document.id !== docId) {
       doc.value = path ? await api.documentByPath(path) : await api.document(docId!);
       const sid = doc.value.document.sectionId;
-      if (sid && sid !== activeSectionId.value) {
-        activeSectionId.value = sid;
-        sectionDocs.value = (await api.section(sid)).documents;
-      }
+      if (sid && sid !== activeSectionId.value) await loadSectionDocs(sid);
     }
     if (!doc.value) return;
     focusedId.value = (route.query.block as string) ?? doc.value.blocks[0]?.id ?? null;
@@ -136,6 +164,7 @@ watch(() => route.fullPath, syncFromRoute, { immediate: true });
     <template #crumbs>
       <span v-if="searchMode">search · <b>"{{ q }}"</b></span>
       <span v-else-if="doc"><b>{{ doc.document.title }}</b><template v-if="focusedBlock"> · block {{ focusedBlock.id.slice(0, 8) }}</template></span>
+      <span v-else-if="sectionView">section · <b>{{ sectionView.section.title }}</b></span>
       <span v-else>map</span>
     </template>
 
@@ -157,6 +186,11 @@ watch(() => route.fullPath, syncFromRoute, { immediate: true });
         </div>
         <p v-if="searchResult && !searchResult.hits.length" class="muted">No results.</p>
       </div>
+
+      <!-- Section page (the "map" of a zone) -->
+      <SectionPanel v-else-if="sectionView" :section="sectionView" :ws="ws"
+        @open-doc="openDoc" @select-section="selectSection" @changed="reloadSection"
+        @deleted-section="onSectionDeleted" />
 
       <!-- Reader -->
       <div v-else class="doc">

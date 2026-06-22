@@ -9,7 +9,7 @@
  */
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db, sections, documents, workspaces } from "./db.ts";
-import { slugify, revise } from "./write.ts";
+import { slugify, revise, deleteDocument } from "./write.ts";
 import { assertAccess } from "./access.ts";
 
 const MAX_DEPTH = 3; // root = 0 ; up to 4 levels
@@ -92,6 +92,38 @@ export async function deleteSection(args: { id: string; reason?: string }, actor
   return { deleted: s.id };
 }
 
+/**
+ * HARD-deletes a section AND its whole subtree: every descendant section, and each
+ * of their documents via deleteDocument (so blocks/sources/links/comments are purged).
+ * Deletes deepest-first to satisfy the `restrict` FKs (a parent can't go before its
+ * children; a section can't go before its documents). Irreversible — distinct from
+ * deleteSection (empty-only, the safe path which stays available).
+ */
+export async function deleteSectionCascade(args: { id: string; reason?: string }, actor: string) {
+  const root = await sectionRow(args.id);
+  // Collect the whole subtree (root included).
+  const all: Sec[] = [];
+  const stack = [root.id];
+  while (stack.length) {
+    const id = stack.pop()!;
+    const s = await sectionRow(id);
+    all.push(s);
+    const children = await db.select({ id: sections.id }).from(sections).where(eq(sections.parentId, id));
+    for (const c of children) stack.push(c.id);
+  }
+  const reason = args.reason ?? `delete section "${root.title}" (cascade)`;
+  let docCount = 0;
+  // Deepest sections first → never delete a parent before its children (FK restrict).
+  for (const sec of all.sort((a, b) => b.depth - a.depth)) {
+    const docs = await db.select({ id: documents.id }).from(documents).where(eq(documents.sectionId, sec.id));
+    for (const d of docs) { await deleteDocument({ id: d.id, reason }, actor); docCount++; }
+    await db.delete(sections).where(eq(sections.id, sec.id));
+  }
+  await revise(root.workspaceId, "structure", root.id, "delete_section_cascade", reason, actor,
+    { title: root.title, slug: root.slug, sections: all.length, documents: docCount }, null);
+  return { deleted: root.id, sections: all.length, documents: docCount };
+}
+
 // ── Reordering (sections OR documents of the same parent) ───────────────────────
 export async function reorder(args: { parentId?: string; orderedChildIds: string[] }, actor: string) {
   const ids = args.orderedChildIds;
@@ -170,6 +202,113 @@ export async function moveDocuments(args: { documentIds: string[]; targetSection
   }
   const moves = await relocateDocs(args.documentIds, target, actor);
   return { op: "move_documents", targetSection: target.slug, moved: moves.length, moves };
+}
+
+// ── Cross-workspace moves (the human "move to another KB/org" — ADR follow-up) ───
+/**
+ * Moves documents into a target section that MAY live in another workspace/org.
+ * Re-dedups the slug in the destination, renumbers, and logs a revision on BOTH
+ * workspaces (exit on source, entry on target) so the audit trail is complete on
+ * each side. No denormalized workspace id on documents/blocks → re-parenting the
+ * sectionId is all it takes (embeddings are content-based, workspace-agnostic).
+ */
+export async function moveDocumentsCrossWorkspace(
+  args: { documentIds: string[]; targetSectionId: string; dryRun?: boolean },
+  actor: string,
+) {
+  const target = await sectionRow(args.targetSectionId);
+  if (args.dryRun) {
+    return { dryRun: true, op: "move_documents_cross", targetSection: target.slug, moves: await previewMoves(args.documentIds, target.id) };
+  }
+  const existing = await db.select({ slug: documents.slug }).from(documents).where(eq(documents.sectionId, target.id));
+  const taken = new Set(existing.map((d) => d.slug));
+  let pos = await nextPos("documents", "sectionId", target.id);
+  const moves: Array<{ id: string; from: string; to: string; slug: string; crossWorkspace: boolean }> = [];
+  for (const id of args.documentIds) {
+    const [doc] = await db.select().from(documents).where(eq(documents.id, id)).limit(1);
+    if (!doc) throw new Error(`Document not found: ${id}`);
+    if (doc.sectionId === target.id) continue;
+    const fromSec = await sectionRow(doc.sectionId);
+    const cross = fromSec.workspaceId !== target.workspaceId;
+    const slug = dedupeSlug(doc.slug, taken);
+    await db.update(documents).set({ sectionId: target.id, slug, position: pos++ }).where(eq(documents.id, id));
+    await revise(fromSec.workspaceId, "document", id, "move_out", `move document → section ${target.slug}`, actor,
+      { sectionId: doc.sectionId, slug: doc.slug }, { sectionId: target.id, slug, workspaceId: target.workspaceId });
+    if (cross) {
+      await revise(target.workspaceId, "document", id, "move_in", `move document ← section ${fromSec.slug}`, actor,
+        { sectionId: doc.sectionId, slug: doc.slug, workspaceId: fromSec.workspaceId }, { sectionId: target.id, slug });
+    }
+    moves.push({ id, from: fromSec.slug, to: target.slug, slug, crossWorkspace: cross });
+  }
+  return { op: "move_documents_cross", targetSection: target.slug, moved: moves.length, moves };
+}
+
+/** Collects a section subtree (descendants only, root excluded). */
+async function descendantSections(rootId: string): Promise<Sec[]> {
+  const out: Sec[] = [];
+  const stack = [rootId];
+  while (stack.length) {
+    const pid = stack.pop()!;
+    const children = await db.select().from(sections).where(eq(sections.parentId, pid));
+    for (const c of children) { out.push(c); stack.push(c.id); }
+  }
+  return out;
+}
+
+/**
+ * Moves a whole section subtree to another workspace/org — optionally re-parented
+ * under `targetParentId` (else it becomes a root section of the target KB). Re-homes
+ * `workspaceId` on the root AND every descendant, shifts their depth, re-dedups the
+ * root slug against the destination siblings, and rejects if the subtree would breach
+ * MAX_DEPTH or land inside itself. Logs a revision on both workspaces.
+ */
+export async function moveSectionCrossWorkspace(
+  args: { sectionId: string; targetWorkspace: string; targetParentId?: string; dryRun?: boolean },
+  actor: string,
+) {
+  const src = await sectionRow(args.sectionId);
+  const [tws] = await db.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.slug, args.targetWorkspace)).limit(1);
+  if (!tws) throw new Error(`Workspace not found: ${args.targetWorkspace}`);
+
+  const descendants = await descendantSections(src.id);
+  const subtreeIds = new Set([src.id, ...descendants.map((s) => s.id)]);
+
+  let newDepth = 0;
+  let parentId: string | null = null;
+  if (args.targetParentId) {
+    if (subtreeIds.has(args.targetParentId)) throw new Error("cannot move a section into itself or its own subtree");
+    const parent = await sectionRow(args.targetParentId);
+    if (parent.workspaceId !== tws.id) throw new Error("target parent is not in the target workspace");
+    newDepth = parent.depth + 1;
+    parentId = parent.id;
+  }
+  const shift = newDepth - src.depth;
+  const maxRelDepth = descendants.reduce((m, s) => Math.max(m, s.depth - src.depth), 0);
+  if (newDepth + maxRelDepth > MAX_DEPTH) throw new Error(`move would exceed max depth (≤ ${MAX_DEPTH})`);
+
+  const siblings = await db.select({ slug: sections.slug }).from(sections)
+    .where(parentId ? eq(sections.parentId, parentId) : and(eq(sections.workspaceId, tws.id), sql`${sections.parentId} is null`));
+  const newSlug = dedupeSlug(src.slug, new Set(siblings.map((s) => s.slug)));
+
+  if (args.dryRun) {
+    return {
+      dryRun: true, op: "move_section_cross", section: src.slug, targetWorkspace: args.targetWorkspace,
+      newParentId: parentId, newDepth, newSlug, descendants: descendants.length,
+    };
+  }
+
+  const pos = await nextPos("sections", "parentId", parentId);
+  await db.update(sections).set({ workspaceId: tws.id, parentId, depth: newDepth, slug: newSlug, position: pos }).where(eq(sections.id, src.id));
+  for (const s of descendants) {
+    await db.update(sections).set({ workspaceId: tws.id, depth: s.depth + shift }).where(eq(sections.id, s.id));
+  }
+  await revise(src.workspaceId, "structure", src.id, "move_section_out", `move section → KB ${args.targetWorkspace}`, actor,
+    { workspaceId: src.workspaceId, parentId: src.parentId, slug: src.slug }, { workspaceId: tws.id, parentId, slug: newSlug });
+  if (src.workspaceId !== tws.id) {
+    await revise(tws.id, "structure", src.id, "move_section_in", `move section ← KB`, actor,
+      { workspaceId: src.workspaceId, slug: src.slug }, { workspaceId: tws.id, parentId, slug: newSlug, descendants: descendants.length });
+  }
+  return { op: "move_section_cross", section: newSlug, targetWorkspace: args.targetWorkspace, movedSections: descendants.length + 1 };
 }
 
 // ── Split (the canonical case) ──────────────────────────────────────────────────

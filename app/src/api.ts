@@ -138,6 +138,29 @@ export const api = {
     send<{ id: string; status: string }>("POST", "/ingestion/reject", { id, reason }),
   requestChanges: (id: string, input: { note?: string; items?: FeedbackItem[] }) =>
     send<IngestionDetail & { requested: number; hasNote: boolean }>("POST", "/ingestion/request-changes", { id, ...input }),
+  // ── Structure (curator/admin) — REST mirror of the restructure verbs ──
+  createSection: (input: { workspace: string; parentId?: string; title: string; summary?: string }) =>
+    send<{ id: string; slug: string; title: string }>("POST", "/section/create", input),
+  renameSection: (input: { id: string; title?: string; summary?: string }) =>
+    send<{ id: string; title: string; summary: string }>("POST", "/section/rename", input),
+  reorder: (input: { parentId?: string; orderedChildIds: string[] }) =>
+    send<{ reordered: string; count: number }>("POST", "/section/reorder", input),
+  createDocument: (input: { sectionId: string; title: string; summary?: string; kind?: string; blocks?: string; reason?: string }) =>
+    send<{ document: DocMeta }>("POST", "/document/create", input),
+  deprecateDocument: (input: { id: string; reason: string; supersededBy?: string }) =>
+    send<{ id: string; status: string }>("POST", "/document/deprecate", input),
+  restoreDocument: (input: { id: string; reason?: string }) =>
+    send<{ id: string; status: string }>("POST", "/document/restore", input),
+  moveDocuments: (input: { documentIds: string[]; targetSectionId: string; dryRun?: boolean }) =>
+    send<{ moved: number }>("POST", "/documents/move", input),
+  deleteDocument: (input: { id: string; reason?: string }) =>
+    send<{ deleted: string; blocks: number }>("DELETE", "/document", input),
+  deleteSection: (input: { id: string; reason?: string }) =>
+    send<{ deleted: string; sections: number; documents: number }>("DELETE", "/section", input),
+  moveDocumentsCross: (input: { documentIds: string[]; targetSectionId: string }) =>
+    send<{ moved: number }>("POST", "/documents/move-cross", input),
+  moveSectionCross: (input: { sectionId: string; targetWorkspace: string; targetParentId?: string }) =>
+    send<{ movedSections: number }>("POST", "/section/move-cross", input),
   admin: {
     orgs: () => get<{ orgs: AdminOrg[] }>("/admin/orgs"),
     accounts: () => get<{ count: number; accounts: PlatformAccount[] }>("/admin/accounts"),

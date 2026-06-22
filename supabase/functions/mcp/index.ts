@@ -42,9 +42,10 @@ import { listAccounts } from "../_shared/platform.ts";
 // MCP v2 surface (#18): no more direct mutation verbs — every content write
 // goes through mem_stage_changes (op-codes → apply). The write.ts handlers
 // are still called by OPS at apply time; mcp only uses the comment ones now.
-import { addComment, resolveComment } from "../_shared/write.ts";
+import { addComment, resolveComment, deleteDocument } from "../_shared/write.ts";
 import {
-  createSection, renameSection, deleteSection, reorder, moveDocuments, splitSection, mergeSections,
+  createSection, renameSection, deleteSection, deleteSectionCascade, reorder, moveDocuments, splitSection, mergeSections,
+  moveDocumentsCrossWorkspace, moveSectionCrossWorkspace,
 } from "../_shared/restructure.ts";
 import { listRevisions } from "../_shared/revisions.ts";
 import { logUsage, listUsageLogs, USAGE_KINDS } from "../_shared/usage_log.ts";
@@ -639,6 +640,40 @@ function buildServer(sub: string): McpServer {
   }, guarded(async (args) => {
     await assertAccess(sub, { id: args.targetId, kind: "section" }, { write: true });
     return json(await mergeSections(args, sub));
+  }));
+
+  server.registerTool("mem_move_documents_cross", {
+    description: "Moves documents to a target section that MAY be in another KB/org (cross-workspace). Logs a revision on both sides. `dryRun:true` to preview. For same-KB moves, prefer mem_move_documents.",
+    inputSchema: { documentIds: z.array(z.string()).max(MAX_BATCH), targetSectionId: z.string(), dryRun: z.boolean().optional() },
+  }, guarded(async (args) => {
+    await assertAccess(sub, { id: args.targetSectionId, kind: "section" }, { write: true });
+    for (const id of args.documentIds) await assertAccess(sub, { id, kind: "document" }, { write: true });
+    return json(await moveDocumentsCrossWorkspace(args, sub));
+  }));
+
+  server.registerTool("mem_move_section_cross", {
+    description: "Moves a section subtree to another KB/org (cross-workspace), optionally under `targetParentId` (else a root section of the target KB). `dryRun:true` to preview.",
+    inputSchema: { sectionId: z.string(), targetWorkspace: z.string(), targetParentId: z.string().optional(), dryRun: z.boolean().optional() },
+  }, guarded(async (args) => {
+    await assertAccess(sub, { id: args.sectionId, kind: "section" }, { write: true });
+    await assertAccess(sub, { workspace: args.targetWorkspace }, { write: true });
+    return json(await moveSectionCrossWorkspace(args, sub));
+  }));
+
+  server.registerTool("mem_delete_document", {
+    description: "HARD-deletes a document and all its blocks (irreversible — blocks, sources links and comments are purged). For reversible obsolescence, prefer deprecate_document.",
+    inputSchema: { id: z.string(), reason: z.string().optional() },
+  }, guarded(async (args) => {
+    await assertAccess(sub, { id: args.id, kind: "document" }, { write: true });
+    return json(await deleteDocument(args, sub));
+  }));
+
+  server.registerTool("mem_delete_section_cascade", {
+    description: "HARD-deletes a section AND its whole subtree (sub-sections + documents). Irreversible. For an empty section, prefer mem_delete_section.",
+    inputSchema: { id: z.string(), reason: z.string().optional() },
+  }, guarded(async (args) => {
+    await assertAccess(sub, { id: args.id, kind: "section" }, { write: true });
+    return json(await deleteSectionCascade(args, sub));
   }));
 
   server.registerTool("mem_revisions", {

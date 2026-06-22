@@ -25,6 +25,7 @@ const routes: RouteRecordRaw[] = [
   { path: "/public", component: () => import("./views/PublicGalleryView.vue") },
   // Read — the block reader
   { path: "/w/:ws", component: () => import("./views/ReaderView.vue") },
+  { path: "/w/:ws/section/:id", component: () => import("./views/ReaderView.vue") },
   { path: "/w/:ws/doc/:id", component: () => import("./views/ReaderView.vue") },
   { path: "/w/:ws/search", component: () => import("./views/ReaderView.vue") },
   // Agent mode — full-screen chat (standalone) on the KB
