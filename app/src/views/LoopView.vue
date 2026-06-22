@@ -34,9 +34,13 @@ const statusLabel = (s: string) => STATUS_LABEL[s] ?? s.toLowerCase();
 const actionable = computed(() => ["PROPOSED", "PARTIAL", "CHANGES_REQUESTED"].includes(detail.value?.status ?? ""));
 const editableOps = new Set(["add_block", "update_block", "add_document"]);
 
-// A change is selectable if it's neither applied nor a contradiction (never auto-applied).
+// A change is selectable (pre-checked) if it's neither applied nor a contradiction (never
+// auto-applied). A CONTRADICT can still be force-accepted by an explicit human toggle below.
 const selectable = (c: IngestionChange) => !c.applied && c.class !== "CONTRADICT";
-const acceptIds = computed(() => detail.value?.changes.filter((c) => selectable(c) && selected[c.id]).map((c) => c.id) ?? []);
+// The apply set: any selected, not-yet-applied change — including a CONTRADICT the human has
+// deliberately force-accepted (the server honours it via acceptIds). CONTRADICTs are never
+// pre-checked (loadDetail), so they only enter here on a conscious override.
+const acceptIds = computed(() => detail.value?.changes.filter((c) => !c.applied && selected[c.id]).map((c) => c.id) ?? []);
 const blockOps = new Set(["attach_source", "detach_source", "link_blocks", "update_block", "set_block_type", "verify_block", "move_block", "delete_block"]);
 function targetBlockId(c: IngestionChange): string | null {
   const p = c.payload as Record<string, unknown>;
@@ -162,8 +166,18 @@ function selectIngestion(id: string) { router.push({ path: `/w/${ws.value}/loop`
 async function apply() {
   if (!detail.value || !acceptIds.value.length) return;
   busy.value = true; error.value = null;
-  const n = acceptIds.value.length;
-  try { await api.applyIngestion(detail.value.id, acceptIds.value, editsPayload()); toast(`${n} change(s) applied`, "ok"); await refresh(); }
+  try {
+    // Inspect per-op outcomes: an op can fail server-side (e.g. a malformed payload) while the
+    // call itself succeeds — surface that instead of a blanket "applied".
+    const res = await api.applyIngestion(detail.value.id, acceptIds.value, editsPayload());
+    const applied = res.results.filter((r) => r.status === "applied").length;
+    const failed = res.results.filter((r) => r.status === "error");
+    if (failed.length) {
+      error.value = failed.map((r) => r.error).filter(Boolean).join(" · ");
+      toast(`${applied} applied · ${failed.length} failed`, "err");
+    } else toast(`${applied} change(s) applied`, "ok");
+    await refresh();
+  }
   catch (e) { error.value = msg(e); toast(error.value, "err"); } finally { busy.value = false; }
 }
 async function rejectAll() {
@@ -229,7 +243,7 @@ watch(() => route.fullPath, loadAll, { immediate: true });
           </p>
 
           <div v-for="c in detail.changes" :key="c.id" class="chg"
-            :class="{ flagged: c.class === 'CONTRADICT', sel: selectable(c) && selected[c.id], done: c.applied }">
+            :class="{ flagged: c.class === 'CONTRADICT', sel: selected[c.id] && !c.applied, done: c.applied }">
             <div class="chghead">
               <span class="cls" :class="'cls-' + c.class">{{ c.class }}</span>
               <span class="op">{{ c.op }}</span>
@@ -274,8 +288,18 @@ watch(() => route.fullPath, loadAll, { immediate: true });
               <textarea class="eta" v-model="fbBuf[c.id]" rows="2" placeholder="feedback for the agent on this change…"></textarea>
             </div>
 
+            <p v-if="c.error" class="warn-card" style="margin-top:8px">⚠ apply failed: {{ c.error }}</p>
+
             <div v-if="c.applied" class="lock" style="color:var(--color-strong-ink)">✓ applied</div>
-            <div v-else-if="c.class === 'CONTRADICT'" class="lock">🔒 contradiction — never auto-applied <span class="mono" style="color:var(--color-faint)">→ escalated to the expert</span></div>
+            <template v-else-if="c.class === 'CONTRADICT'">
+              <div class="lock">🔒 contradiction — never auto-applied <span class="mono" style="color:var(--color-faint)">→ requires your explicit decision</span></div>
+              <div class="act">
+                <button class="btn" :class="selected[c.id] ? 'go' : 'no'" @click="selected[c.id] = !selected[c.id]">
+                  {{ selected[c.id] ? "✓ will be force-accepted" : "⚠ force-accept (override)" }}
+                </button>
+                <button class="btn ghost" :class="{ on: fbOpen[c.id] }" @click="fbOpen[c.id] = !fbOpen[c.id]">💬 comment</button>
+              </div>
+            </template>
             <div v-else class="act">
               <button class="btn" :class="selected[c.id] ? 'go' : ''" @click="selected[c.id] = !selected[c.id]">
                 {{ selected[c.id] ? "✓ accepted" : "○ accept" }}

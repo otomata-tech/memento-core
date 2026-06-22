@@ -73,6 +73,9 @@ export interface IngestionCounts { total: number; applied: number; pending: numb
 export interface IngestionSummary { id: string; title: string; status: string; sourceId: string | null; createdBy: string | null; createdAt: string; counts: IngestionCounts }
 export interface IngestionDetail extends IngestionSummary { summary: string; reviewNote: string | null; changes: IngestionChange[]; decidedBy: string | null; decidedAt: string | null }
 export interface ChangeEdit { id: string; payload: Record<string, unknown> }
+// /ingestion/apply returns per-op outcomes, not the full detail — so the UI can surface errors.
+export interface ApplyOpResult { id: string; status: string; reason?: string; error?: string }
+export interface ApplyResult { id: string; workspace?: string; status: string; counts: IngestionCounts; results: ApplyOpResult[] }
 export interface FeedbackItem { changeId?: string; body: string }
 export interface SearchHit { blockId: string; type: string; snippet: string; rank: number; docPath: string; sectionPath: string }
 export interface SearchResult { hits: SearchHit[]; total: number }
@@ -133,7 +136,7 @@ export const api = {
   resolveComment: (id: string) =>
     send<{ id: string; resolvedAt: string | null }>("POST", "/comment/resolve", { id }),
   applyIngestion: (id: string, acceptIds?: string[], edits?: ChangeEdit[]) =>
-    send<IngestionDetail>("POST", "/ingestion/apply", { id, acceptIds, edits }),
+    send<ApplyResult>("POST", "/ingestion/apply", { id, acceptIds, edits }),
   rejectIngestion: (id: string, reason?: string) =>
     send<{ id: string; status: string }>("POST", "/ingestion/reject", { id, reason }),
   requestChanges: (id: string, input: { note?: string; items?: FeedbackItem[] }) =>
