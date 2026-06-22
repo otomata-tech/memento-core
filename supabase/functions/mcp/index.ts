@@ -747,7 +747,11 @@ function buildServer(sub: string): McpServer {
       "The response echoes `url` = THE review link (Loop) to give the human — never craft a URL yourself. " +
       "`changes[]` = [{op, payload, class?, target?, rationale?}]. " +
       "op ∈ add_document|add_block|update_block|set_block_type|delete_block|attach_source|detach_source|verify_block|move_block|link_blocks|deprecate_document. " +
-      "`payload` = the arguments of the corresponding verb. class ∈ CONFIRM|ENRICH|CONTRADICT|OBSOLETE (CONTRADICT is never auto-applied). " +
+      "`payload` = the arguments of the corresponding verb — key shapes: " +
+      "add_document {sectionId (or a resolvable sectionPath), title, summary?, blocks?: markdown-string | [{type,content}]} — CREATES THE DOCUMENT AND ITS BLOCKS IN ONE OP (a document with zero block is not persisted, so pass `blocks` here rather than a separate add_block); " +
+      "add_block {documentId, type, content}; update_block {id, content?, type?}; set_block_type {id, type}; verify_block {id}; attach_source {blockId, …}; link_blocks {fromId, toId, relation}; deprecate_document {id}. " +
+      "Block `type` ∈ PROSE|PRINCIPE|REGLE|EXCEPTION|EXEMPLE|PROCEDURE|MISE_EN_GARDE|DEFINITION|QUESTION (default PROSE — there is no `text` type). " +
+      "class ∈ CONFIRM|ENRICH|CONTRADICT|OBSOLETE (CONTRADICT is never auto-applied). " +
       "`clientKey` (recommended) = idempotency AND revision key: if an open ingestion (PROPOSED/PARTIAL/CHANGES_REQUESTED) " +
       "already carries this clientKey, your new call REPLACES its change-set and reopens it as PROPOSED (`superseded: true`) — this is how you respond to a sent-back ingestion: " +
       "re-read the feedback via mem_ingestion_get, then re-stage with the SAME clientKey. A closed ingestion (APPLIED/REJECTED) stays a no-op (`deduplicated: true`). " +
