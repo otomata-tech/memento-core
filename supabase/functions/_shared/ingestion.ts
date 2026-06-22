@@ -164,7 +164,7 @@ export async function stageChanges(
         title: args.title, summary: args.summary ?? "", sourceId: args.sourceId ?? dup.sourceId,
         proposal: next, status: "PROPOSED", reviewNote: null, decidedBy: null, decidedAt: null,
       }).where(eq(ingestions.id, dup.id)).returning();
-      await broadcastInbox(ws.slug);
+      await broadcastInbox(ws.id);
       return { ...present(upd, ws.slug), superseded: true };
     }
   }
@@ -190,7 +190,7 @@ export async function stageChanges(
       })),
   );
   const similarExisting = dupChecks.filter((d) => d.similar.length);
-  await broadcastInbox(ws.slug);
+  await broadcastInbox(ws.id);
   return { ...present(row, ws.slug), ...(similarExisting.length ? { similarExisting } : {}) };
 }
 
@@ -315,7 +315,7 @@ export async function applyIngestion(
     // claimedAt: null → releases the lock (#40); a legitimate re-apply of a PARTIAL can resume.
     .set({ proposal: changes, status, decidedBy: actor, decidedAt: new Date(), claimedAt: null })
     .where(eq(ingestions.id, args.id));
-  await broadcastInbox(slug);
+  await broadcastInbox(row.workspaceId);
   return { id: args.id, workspace: slug, status, counts: counts(changes), results };
 }
 
@@ -327,7 +327,7 @@ export async function rejectIngestion(args: { id: string; reason?: string }, act
   await db.update(ingestions)
     .set({ status: "REJECTED", decidedBy: actor, decidedAt: new Date() })
     .where(eq(ingestions.id, args.id));
-  await broadcastInbox(slug);
+  await broadcastInbox(row.workspaceId);
   return { id: args.id, status: "REJECTED", reason: args.reason ?? null };
 }
 
@@ -366,6 +366,6 @@ export async function requestChanges(
   await db.update(ingestions)
     .set({ proposal: changes, reviewNote, status: "CHANGES_REQUESTED", decidedBy: actor, decidedAt: new Date() })
     .where(eq(ingestions.id, args.id));
-  await broadcastInbox(slug);
+  await broadcastInbox(row.workspaceId);
   return { ...present((await fetchWithSlug(args.id)).row, slug), requested: attached, hasNote: general.length > 0 };
 }

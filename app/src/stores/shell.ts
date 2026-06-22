@@ -12,6 +12,8 @@ type Ref = { slug: string; name: string };
 export const shell = reactive({
   authed: false,
   email: null as string | null,
+  sub: null as string | null, // auth user id — realtime topic key
+
   orgs: [] as AdminOrg[],
   shared: [] as Ref[], // KBs granted outside my orgs
   pins: [] as Ref[],   // pinned public KBs
@@ -26,7 +28,9 @@ export const shell = reactive({
 /** Auth identity (session + email). Call once at app start / on mount. */
 export async function initSession() {
   shell.authed = !!(await supabase.auth.getSession()).data.session;
-  shell.email = shell.authed ? (await supabase.auth.getUser()).data.user?.email ?? null : null;
+  const user = shell.authed ? (await supabase.auth.getUser()).data.user : null;
+  shell.email = user?.email ?? null;
+  shell.sub = user?.id ?? null;
 }
 
 /** Orgs + KB selector data + favorite + platform flag. */
