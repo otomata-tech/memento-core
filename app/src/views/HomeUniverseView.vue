@@ -22,6 +22,7 @@ function manage(slug: string) { router.push(`/org/${slug}/bases`); }
   <AppShell page="home" ws="">
     <template #crumbs><span><b>My universe</b></span></template>
 
+    <div class="scroll">
     <div class="content">
       <h1>My universe</h1>
 
@@ -64,6 +65,7 @@ function manage(slug: string) { router.push(`/org/${slug}/bases`); }
           </button>
         </div>
       </section>
+    </div>
     </div>
   </AppShell>
 </template>
