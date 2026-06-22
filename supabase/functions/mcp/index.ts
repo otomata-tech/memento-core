@@ -36,7 +36,7 @@ import { assertWithinLimit, RateLimitError } from "../_shared/ratelimit.ts";
 import { setDefaultWorkspace, pinWorkspace, unpinWorkspace } from "../_shared/prefs.ts";
 import { contextMap, wsContext, accessibleWorkspaceRefs } from "../_shared/context.ts";
 import { setDoctrine, updateWorkspace, archiveWorkspace } from "../_shared/workspace_mgmt.ts";
-import { listMyOrgs, createWorkspace, createOrg, updateOrg, transferWorkspace } from "../_shared/admin.ts";
+import { listMyOrgs, createWorkspace, createOrg, updateOrg, transferWorkspace, deleteWorkspace } from "../_shared/admin.ts";
 import { listGrants, grantAccess, revokeGrant, setVisibility } from "../_shared/grants.ts";
 import { listAccounts } from "../_shared/platform.ts";
 // MCP v2 surface (#18): no more direct mutation verbs — every content write
@@ -236,6 +236,11 @@ function buildServer(sub: string): McpServer {
     await assertWorkspaceAdmin(sub, ws);
     return json({ workspace: ws, org, ...(await archiveWorkspace({ workspace: ws, archived: args.archived }, sub)) });
   }));
+
+  server.registerTool("mem_delete_workspace", {
+    description: "HARD-deletes a whole KB and ALL its content (documents, blocks, sections, revisions, ingestions — irreversible). The KB must be ARCHIVED first (mem_archive_workspace): archive = reversible step 1, delete = irreversible step 2. Org-admin only. `workspace` is required (no default, to avoid deleting the wrong KB).",
+    inputSchema: { workspace: z.string() },
+  }, guarded(async (args) => json(await deleteWorkspace(sub, { workspace: args.workspace }))));
 
   server.registerTool("mem_grants", {
     description:

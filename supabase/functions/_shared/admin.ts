@@ -354,26 +354,50 @@ export async function updateOrg(sub: string, args: { orgSlug: string; name?: str
  * its org's deletion forever — and there is no user-facing hard-delete of a KB. This makes
  * "archive the KB, then delete its org" actually work (the deleteOrg message promised it).
  */
+/** Hard-purges ONE workspace's content then the workspace row, FK-safe. */
+async function purgeWorkspaceContent(wsId: string): Promise<void> {
+  // documents → blocks/links/block_sources cascade from documents.
+  await db.delete(documents).where(
+    inArray(documents.sectionId, db.select({ id: sections.id }).from(sections).where(eq(sections.workspaceId, wsId))),
+  );
+  // sections: parent_id is RESTRICT — delete leaves first, looping until none remain.
+  for (;;) {
+    const rows = await db.select({ id: sections.id, parentId: sections.parentId }).from(sections)
+      .where(eq(sections.workspaceId, wsId));
+    if (!rows.length) break;
+    const parents = new Set(rows.map((r) => r.parentId).filter(Boolean) as string[]);
+    const leaves = rows.map((r) => r.id).filter((id) => !parents.has(id));
+    await db.delete(sections).where(inArray(sections.id, leaves.length ? leaves : rows.map((r) => r.id)));
+  }
+  // the workspace itself: revisions / ingestions / grants cascade from workspaces;
+  // user_prefs.default_workspace_id is SET NULL.
+  await db.delete(workspaces).where(eq(workspaces.id, wsId));
+}
+
 async function purgeArchivedWorkspaces(orgId: string): Promise<void> {
   const wss = await db.select({ id: workspaces.id }).from(workspaces)
     .where(and(eq(workspaces.orgId, orgId), isNotNull(workspaces.archivedAt)));
-  for (const ws of wss) {
-    // documents → blocks/links/block_sources cascade from documents.
-    await db.delete(documents).where(
-      inArray(documents.sectionId, db.select({ id: sections.id }).from(sections).where(eq(sections.workspaceId, ws.id))),
-    );
-    // sections: parent_id is RESTRICT — delete leaves first, looping until none remain.
-    for (;;) {
-      const rows = await db.select({ id: sections.id, parentId: sections.parentId }).from(sections)
-        .where(eq(sections.workspaceId, ws.id));
-      if (!rows.length) break;
-      const parents = new Set(rows.map((r) => r.parentId).filter(Boolean) as string[]);
-      const leaves = rows.map((r) => r.id).filter((id) => !parents.has(id));
-      await db.delete(sections).where(inArray(sections.id, leaves.length ? leaves : rows.map((r) => r.id)));
-    }
-    // the workspace itself: revisions / ingestions / grants cascade from workspaces.
-    await db.delete(workspaces).where(eq(workspaces.id, ws.id));
+  for (const ws of wss) await purgeWorkspaceContent(ws.id);
+}
+
+/**
+ * Hard-deletes a single workspace (irreversible — every document, block, section, revision and
+ * ingestion is purged). Org-admin only, and the KB must be ARCHIVED first: archiving is the
+ * deliberate, reversible first step, hard-delete the irreversible second. Mirrors the doc/section
+ * hard-deletes; fills the gap that there was no user-facing hard-delete of a whole KB.
+ */
+export async function deleteWorkspace(sub: string, args: { workspace: string }) {
+  const [w] = await db.select({
+    id: workspaces.id, slug: workspaces.slug, orgId: workspaces.orgId, archivedAt: workspaces.archivedAt,
+  }).from(workspaces).where(eq(workspaces.slug, args.workspace)).limit(1);
+  if (!w) throw new Error(`Workspace not found: ${args.workspace}`);
+  if (!w.orgId) throw new Error("workspace has no owning org — cannot authorize deletion");
+  await assertOrgAdmin(sub, w.orgId);
+  if (!w.archivedAt) {
+    throw new Error("archive the KB first — deleteWorkspace purges an already-archived KB (archive = reversible step 1, delete = irreversible step 2).");
   }
+  await purgeWorkspaceContent(w.id);
+  return { deleted: w.slug };
 }
 
 /**

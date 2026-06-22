@@ -14,7 +14,7 @@ import { verifyBlock, attachSource, addComment, resolveComment, addDocument, dep
 import { createSection, renameSection, reorder, moveDocuments, deleteSectionCascade, moveDocumentsCrossWorkspace, moveSectionCrossWorkspace } from "../_shared/restructure.ts";
 import { getIngestion, listIngestions, applyIngestion, rejectIngestion, requestChanges } from "../_shared/ingestion.ts";
 import {
-  listMyOrgs, removeMember, inviteMember, createWorkspace, createOrg, updateOrg, deleteOrg,
+  listMyOrgs, removeMember, inviteMember, createWorkspace, createOrg, updateOrg, deleteOrg, deleteWorkspace,
   resendInvite, inviteLinkFor, transferWorkspace, ensureDefaultWorkspace, ensureAccount,
 } from "../_shared/admin.ts";
 import { getDefaultWorkspace, setDefaultWorkspace, listPins, pinWorkspace, unpinWorkspace } from "../_shared/prefs.ts";
@@ -189,6 +189,9 @@ async function mutationRoute(method: string, path: string, body: any, sub: strin
     case "POST /workspace/update":
       await assertAccess(sub, { workspace: body.workspace }, { write: true });
       return updateWorkspace(body, sub);
+    case "DELETE /workspace":
+      // Hard-delete a whole KB — org-admin + archived-first checks live inside deleteWorkspace.
+      return deleteWorkspace(sub, body);
     case "POST /workspace/archive":
       await assertWorkspaceAdmin(sub, body.workspace);
       return archiveWorkspace(body, sub);
