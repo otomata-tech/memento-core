@@ -10,7 +10,7 @@ import { getSection } from "../_shared/sections.ts";
 import { getDocument, getBlock } from "../_shared/documents.ts";
 import { searchBlocks, searchPublic } from "../_shared/search.ts";
 import { listRevisions } from "../_shared/revisions.ts";
-import { verifyBlock, attachSource, addComment, resolveComment, addDocument, deprecateDocument, restoreDocument, deleteDocument, updateBlock } from "../_shared/write.ts";
+import { verifyBlock, attachSource, addComment, resolveComment, addDocument, deprecateDocument, restoreDocument, updateDocument, deleteDocument, updateBlock } from "../_shared/write.ts";
 import { createSection, renameSection, reorder, moveDocuments, deleteSectionCascade, moveDocumentsCrossWorkspace, moveSectionCrossWorkspace } from "../_shared/restructure.ts";
 import { getIngestion, listIngestions, applyIngestion, rejectIngestion, requestChanges } from "../_shared/ingestion.ts";
 import {
@@ -231,6 +231,9 @@ async function mutationRoute(method: string, path: string, body: any, sub: strin
     case "POST /document/restore":
       await assertAccess(sub, { id: body.id, kind: "document" }, { write: true });
       return restoreDocument(body, sub);
+    case "POST /document/update":
+      await assertAccess(sub, { id: body.id, kind: "document" }, { write: true });
+      return updateDocument(body, sub);
     case "POST /documents/move":
       // Same-workspace move: write on the target section ⇒ same KB ⇒ covers source.
       await assertAccess(sub, { id: body.targetSectionId, kind: "section" }, { write: true });

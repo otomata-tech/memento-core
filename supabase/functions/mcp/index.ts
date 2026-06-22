@@ -42,7 +42,7 @@ import { listAccounts } from "../_shared/platform.ts";
 // MCP v2 surface (#18): no more direct mutation verbs — every content write
 // goes through mem_stage_changes (op-codes → apply). The write.ts handlers
 // are still called by OPS at apply time; mcp only uses the comment ones now.
-import { addComment, resolveComment, deleteDocument } from "../_shared/write.ts";
+import { addComment, resolveComment, updateDocument, deleteDocument } from "../_shared/write.ts";
 import {
   createSection, renameSection, deleteSection, deleteSectionCascade, reorder, moveDocuments, splitSection, mergeSections,
   moveDocumentsCrossWorkspace, moveSectionCrossWorkspace,
@@ -658,6 +658,14 @@ function buildServer(sub: string): McpServer {
     await assertAccess(sub, { id: args.sectionId, kind: "section" }, { write: true });
     await assertAccess(sub, { workspace: args.targetWorkspace }, { write: true });
     return json(await moveSectionCrossWorkspace(args, sub));
+  }));
+
+  server.registerTool("mem_update_document", {
+    description: "Edits a document's `title` and/or `summary` (its metadata, NOT its blocks — for content use update_block). The slug stays stable so deep-links don't break. Use it to keep a doc's one-line summary in sync after its blocks have moved/changed.",
+    inputSchema: { id: z.string(), title: z.string().optional(), summary: z.string().optional(), reason: z.string().optional() },
+  }, guarded(async (args) => {
+    await assertAccess(sub, { id: args.id, kind: "document" }, { write: true });
+    return json(await updateDocument(args, sub));
   }));
 
   server.registerTool("mem_delete_document", {

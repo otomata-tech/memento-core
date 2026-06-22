@@ -341,6 +341,21 @@ export async function restoreDocument(args: { id: string; reason?: string }, act
   return { id: args.id, status: after.status };
 }
 
+/** Edits a document's title and/or summary. The slug stays stable so deep-links don't break. */
+export async function updateDocument(args: { id: string; title?: string; summary?: string; reason?: string }, actor: string, ctx?: WriteCtx) {
+  const wsId = await workspaceIdForTarget("document", args.id);
+  if (!wsId) throw new Error(`Document not found: ${args.id}`);
+  const [before] = await db.select().from(documents).where(eq(documents.id, args.id)).limit(1);
+  const patch: Record<string, unknown> = {};
+  if (args.title !== undefined) patch.title = args.title;
+  if (args.summary !== undefined) patch.summary = args.summary;
+  if (Object.keys(patch).length === 0) throw new Error("update_document: nothing to update — pass `title` and/or `summary`.");
+  const [after] = await db.update(documents).set(patch).where(eq(documents.id, args.id)).returning();
+  await revise(wsId, "document", args.id, "update", args.reason ?? "update document", actor,
+    { title: before.title, summary: before.summary }, { title: after.title, summary: after.summary }, ctx?.ingestionId);
+  return { id: args.id, title: after.title, summary: after.summary };
+}
+
 /**
  * HARD-deletes a document. Its blocks cascade via FK (`blocks.document_id`
  * onDelete cascade → block_sources, links). Comments are polymorphic (no FK) so we
