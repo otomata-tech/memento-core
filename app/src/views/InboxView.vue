@@ -8,6 +8,7 @@ import { useRouter } from "vue-router";
 import { api, type InboxItem, type IngestionDetail, type IngestionChange } from "../api";
 import AppShell from "../components/AppShell.vue";
 import { toast } from "../lib/toast";
+import { refreshLoop } from "../stores/shell";
 
 const router = useRouter();
 const items = ref<InboxItem[]>([]);
@@ -62,12 +63,13 @@ async function applyAll(it: InboxItem) {
     toast(failed ? `${applied} applied · ${failed} failed` : `${applied} change(s) applied${held ? ` · ${held} contradiction(s) held` : ""}`, failed ? "err" : "ok");
     open[it.id] = false; delete details[it.id];
     await load();
+    await refreshLoop(it.workspace); // sync the global 📥 badge + that KB's pending
   } catch (e) { toast(String(e instanceof Error ? e.message : e), "err"); }
   finally { busy.value = null; }
 }
 async function reject(it: InboxItem) {
   busy.value = it.id;
-  try { await api.rejectIngestion(it.id); toast("Rejected", "ok"); open[it.id] = false; delete details[it.id]; await load(); }
+  try { await api.rejectIngestion(it.id); toast("Rejected", "ok"); open[it.id] = false; delete details[it.id]; await load(); await refreshLoop(it.workspace); }
   catch (e) { toast(String(e instanceof Error ? e.message : e), "err"); }
   finally { busy.value = null; }
 }

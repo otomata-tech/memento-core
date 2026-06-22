@@ -7,6 +7,7 @@ import { api, type IngestionSummary, type IngestionDetail, type IngestionChange,
 import AppShell from "../components/AppShell.vue";
 import { renderMd } from "../lib/blocks";
 import { toast } from "../lib/toast";
+import { refreshLoop } from "../stores/shell";
 
 const route = useRoute();
 const router = useRouter();
@@ -200,6 +201,7 @@ async function refresh() {
   const [ings, revs] = await Promise.all([api.ingestions(ws.value), api.revisions(ws.value)]);
   list.value = ings.ingestions; revisions.value = revs.revisions;
   if (id) await loadDetail(id);
+  await refreshLoop(ws.value); // keep the header badges (📥 inbox + Loop) in sync
 }
 function openGraph(id: string) { router.push(`/w/${ws.value}/graph/${id}`); }
 function msg(e: unknown): string {

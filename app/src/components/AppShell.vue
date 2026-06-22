@@ -8,26 +8,31 @@ import { useRouter } from "vue-router";
 import { api, type AdminOrg } from "../api";
 import { supabase } from "../auth";
 import SharePanel from "./SharePanel.vue";
+import { shell, initSession, loadShell, loadInbox, loadPending } from "../stores/shell";
 
 const props = defineProps<{ page: "reader" | "graph" | "loop" | "org" | "comptes" | "inbox"; ws: string; org?: string }>();
 const router = useRouter();
 
-const orgList = ref<AdminOrg[]>([]);
-const shared = ref<{ slug: string; name: string }[]>([]); // KBs granted outside my orgs
-const pins = ref<{ slug: string; name: string }[]>([]); // pinned public KBs (my universe)
-const platformAdmin = ref(false); // platform operator → "Accounts" entry in the org menu
-const favorite = ref<string | null>(null);
-const pending = ref(0);
-const inboxCount = ref(0); // pending ingestions across ALL the user's KBs (global)
+// Shared chrome state = single source of truth in the store, read here as computeds
+// (template unchanged; only the data origin moves). Mutations go through the store
+// actions so every surface stays in sync — no more stale menu/badges after navigation.
+const orgList = computed(() => shell.orgs);
+const shared = computed(() => shell.shared);
+const pins = computed(() => shell.pins);
+const platformAdmin = computed(() => shell.platformAdmin);
+const favorite = computed(() => shell.favorite);
+const pending = computed(() => shell.pending);
+const inboxCount = computed(() => shell.inboxCount);
+const email = computed(() => shell.email);
+const authed = computed(() => shell.authed);
+// Purely-local UI state.
 const q = ref("");
-const email = ref<string | null>(null);
 const menuOpen = ref(false);
 const orgOpen = ref(false);
 const shareOpen = ref(false); // Share popover (org-admin of the current base)
 const newOrgName = ref("");
 const newOrgOpen = ref(false);
 const searchInput = ref<HTMLInputElement | null>(null);
-const authed = ref(false); // false = anonymous read (public KB): no account/org menus
 
 /** Current org: explicit (/org/:org pages), otherwise the owning org of the open base. */
 const currentOrg = computed<AdminOrg | null>(() => {
@@ -37,33 +42,7 @@ const currentOrg = computed<AdminOrg | null>(() => {
 /** Current org's bases (the selector does not cross orgs). */
 const wsList = computed(() => currentOrg.value?.workspaces ?? []);
 
-async function loadShell() {
-  if (!authed.value) return; // anonymous: no account/org surface to load
-  try {
-    const [r, prefs, all, pinned] = await Promise.all([api.admin.orgs(), api.prefs(), api.workspaces(), api.pinned()]);
-    orgList.value = r.orgs;
-    favorite.value = prefs.defaultWorkspace;
-    // "Shared with me": accessible (grant) but in none of my orgs.
-    const inOrgs = new Set(r.orgs.flatMap((o) => o.workspaces.map((w) => w.slug)));
-    shared.value = all.filter((w) => !inOrgs.has(w.slug));
-    // "Pinned public": my pins that are neither in my orgs nor shared.
-    const known = new Set([...inOrgs, ...shared.value.map((w) => w.slug)]);
-    pins.value = pinned.filter((w) => !known.has(w.slug)).map((w) => ({ slug: w.slug, name: w.name }));
-  } catch { /* the session guard handles the 401 */ }
-  // Platform probe (403 = not operator, silent) — drives the "Accounts" entry.
-  try { await api.admin.accounts(); platformAdmin.value = true; } catch { platformAdmin.value = false; }
-}
-async function loadPending() {
-  if (!props.ws || !authed.value) { pending.value = 0; return; }
-  try {
-    const r = await api.ingestions(props.ws, "PROPOSED");
-    pending.value = r.count;
-  } catch { pending.value = 0; }
-}
-async function loadInbox() {
-  if (!authed.value) { inboxCount.value = 0; return; }
-  try { inboxCount.value = (await api.inbox()).count; } catch { inboxCount.value = 0; }
-}
+// loadShell / loadPending / loadInbox now live in the store (../stores/shell).
 
 function go(path: string) { router.push(path); }
 function switchWs(e: Event) { router.push(`/w/${(e.target as HTMLSelectElement).value}`); }
@@ -83,7 +62,7 @@ async function createOrg() {
 }
 async function toggleFav() {
   const r = await api.setDefaultWorkspace(props.ws);
-  favorite.value = r.defaultWorkspace;
+  shell.favorite = r.defaultWorkspace;
 }
 /** Current KB outside my orgs (granted or public) → candidate for pinning. */
 const isForeign = computed(() => !!props.ws && !orgList.value.some((o) => o.workspaces.some((w) => w.slug === props.ws)));
@@ -116,9 +95,8 @@ function onKey(e: KeyboardEvent) {
 }
 
 onMounted(async () => {
-  authed.value = !!(await supabase.auth.getSession()).data.session;
-  loadShell(); loadPending(); loadInbox();
-  email.value = (await supabase.auth.getUser()).data.user?.email ?? null;
+  await initSession();
+  loadShell(); loadPending(props.ws); loadInbox();
   document.addEventListener("click", onDocClick);
   window.addEventListener("keydown", onKey);
 });
@@ -127,7 +105,7 @@ onBeforeUnmount(() => { document.removeEventListener("click", onDocClick); windo
 // component (e.g. /w/:ws/doc vs /w/:ws/section), so onMounted runs once. Re-sync the
 // chrome whenever the KB/org CONTEXT changes — not on every doc/block click — so the
 // menu, KB selector and badges never go stale after navigation.
-watch(() => [props.ws, props.org], () => { loadShell(); loadPending(); loadInbox(); });
+watch(() => [props.ws, props.org], () => { loadShell(); loadPending(props.ws); loadInbox(); });
 defineExpose({ reloadShell: loadShell });
 </script>
 
