@@ -15,7 +15,7 @@ and [`docs/specs/knowledge-base.md`](docs/specs/knowledge-base.md) for the model
 
 - **Edge runtime (prod)**: Deno — `supabase/functions/{mcp,api}` over `_shared/` (db, auth, write, search, access). Auth via JWT (OAuth/OIDC). No LLM server-side: reads are deterministic; embeddings (optional) power hybrid search.
 - **Schema/tooling (Node)**: `server/` — Drizzle is the single canonical schema (`server/src/schema.ts`, re-exported to Deno via `_shared/db.ts`), migrations in `server/drizzle/`.
-- **Viewer**: `app/` — Vue 3 + Vite + Tailwind.
+- **Viewer**: `app/` — Vue 3 + Vite + Tailwind. Analytics PostHog (EU) gated par consentement (`app/src/lib/analytics.ts` + `ConsentBanner`), identify par user Supabase. ⚠️ `api_host = location.origin + '/ingest'` → dépend de la **CF Pages Function reverse-proxy `app/functions/ingest/[[path]].ts`** (`/ingest/static/*`→assets PostHog, `/ingest/*`→ingestion) ; la retirer casse l'analytics en silence.
 - **DB**: Postgres + `pgvector`.
 
 ## Layout
