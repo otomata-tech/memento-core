@@ -67,6 +67,15 @@ export async function isPageAccessible(sub: string, pageId: string): Promise<boo
   });
 }
 
+/** Page ÉNUMÉRABLE (membership/grant/owner/héritage) — SANS le public-par-lien :
+ *  le prédicat de search/list (#57). is_page_accessible (public inclus) = get/RLS. */
+export async function isPageEnumerable(sub: string, pageId: string): Promise<boolean> {
+  return withCurrentSub(sub, async (tx) => {
+    const r = await tx.execute(sql`select is_page_enumerable(${pageId}::uuid) as ok`);
+    return (r as unknown as { ok: boolean }[])[0]?.ok === true;
+  });
+}
+
 /** Autorité d'ÉCRITURE (mode effectif = write). */
 export async function pageCanWrite(sub: string, pageId: string): Promise<boolean> {
   return withCurrentSub(sub, async (tx) => {
