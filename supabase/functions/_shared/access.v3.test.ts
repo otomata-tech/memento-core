@@ -40,6 +40,7 @@ const id = {
   org: crypto.randomUUID(), base: crypto.randomUUID(),
   root: crypto.randomUUID(), priv: crypto.randomUUID(),
   privChild: crypto.randomUUID(), pub: crypto.randomUUID(), bobPage: crypto.randomUUID(),
+  bobPriv: crypto.randomUUID(),
   org2: crypto.randomUUID(), base2: crypto.randomUUID(), pub2: crypto.randomUUID(),
 };
 
@@ -55,7 +56,8 @@ async function seed() {
     (${id.priv}::uuid,      ${id.base}::uuid, ${id.root}::uuid,'priv',   'private', ${sub.alice}, 1),
     (${id.privChild}::uuid, ${id.base}::uuid, ${id.priv}::uuid,'child',  'org',     ${sub.alice}, 2),
     (${id.pub}::uuid,       ${id.base}::uuid, null,            'pub',    'public',  ${sub.alice}, 0),
-    (${id.bobPage}::uuid,   ${id.base}::uuid, null,            'bobPage','org',     ${sub.bob},   0)`);
+    (${id.bobPage}::uuid,   ${id.base}::uuid, null,            'bobPage','org',     ${sub.bob},   0),
+    (${id.bobPriv}::uuid,   ${id.base}::uuid, null,            'bobPriv','private', ${sub.bob},   0)`);
   await db.execute(sql`insert into mem_page_grants(base_id,page_id,user_id,mode) values
     (${id.base}::uuid, ${id.priv}::uuid, ${sub.carol}, 'read')`);
   // Org 2 (autre tenant) : page PUBLIQUE — bob n'en est pas membre.
@@ -68,7 +70,7 @@ async function seed() {
 
 async function cleanup() {
   await db.execute(sql`delete from mem_page_grants where base_id = ${id.base}::uuid`);
-  for (const pid of [id.privChild, id.priv, id.root, id.pub, id.bobPage, id.pub2]) {
+  for (const pid of [id.privChild, id.priv, id.root, id.pub, id.bobPage, id.bobPriv, id.pub2]) {
     await db.execute(sql`delete from mem_pages where id = ${pid}::uuid`);
   }
   for (const oid of [id.org, id.org2]) {
@@ -118,6 +120,14 @@ Deno.test({
     // ── alice (proprio) a tout en write ──
     assertEquals(await pageReadMode(sub.alice, id.priv), "write", "alice écrit priv (proprio)");
     await assertAccess(sub.alice, { pageId: id.priv }, { write: true });
+
+    // ── FIX lockout : org_admin lit+ÉCRIT une page PRIVÉE d'un membre (qu'il ne possède PAS) ──
+    assertEquals(await pageReadMode(sub.dave, id.bobPriv), null, "dave (membre) ne lit PAS la page privée de bob");
+    assertEquals(await isPageAccessible(sub.dave, id.bobPriv), false, "is_page_accessible(dave,bobPriv) = false");
+    assertEquals(await pageReadMode(sub.alice, id.bobPriv), "write", "alice (org_admin) ÉCRIT la page privée de bob — pas de lockout");
+    await assertAccess(sub.alice, { pageId: id.bobPriv }, { write: true });
+    assert((new Set(await accessiblePageIds(sub.alice))).has(id.bobPriv), "alice (admin) énumère bobPriv");
+    await assertCanSetVisibility(sub.alice, id.bobPriv, "org"); // l'admin peut TOUJOURS dé-privatiser
 
     // ── carol (invité externe, read sur priv) : bornée à priv + enfant hérité ──
     assertEquals(await pageReadMode(sub.carol, id.priv), "read", "carol lit priv (grant)");

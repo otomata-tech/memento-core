@@ -63,3 +63,28 @@ Avec **entités au niveau org** + **1 base/org**, une org de **conseil** (plusie
 | Groupes (partage à un groupe d'utilisateurs) | besoin prouvé ; en v1, grants par utilisateur |
 | Multi-base par org | besoin de cloisonner plusieurs mémoires (ou entités cross-client, cf. ci-dessus) |
 | Partage infra-page (par portion) | besoin prouvé ; en v1, au niveau page (`page_source.locator` pour l'ancrage de source) |
+
+## Amendement (2026-06-26) — `org_admin` gouverne toute page de son org
+
+Le lot #61 avait tranché « `private` est personnel : l'org_admin ne franchit PAS un gate
+`private` d'autrui » (gouvernance ≠ accès au contenu privé). **Un test du viewer a montré
+que cette règle crée une trappe à sens unique** : passer une page en `private` la rend
+injoignable par l'admin qui l'a flippée (il n'en est pas le `owner`), donc **non
+restaurable**. Aggravé par la migration v2→v3 : les pages migrées ont **`owner_id = NULL`**
+(une page de KB partagée n'a pas de propriétaire personnel — `owner_id` ne sert qu'au cas
+`private`). Sur une page sans propriétaire, `private` = visible de **personne** → contenu
+définitivement perdu.
+
+**Décision** : on **révise #61**. Un **admin de l'org propriétaire de la base** a un accès
+effectif `write` sur **toute page de l'org**, quelle que soit sa visibilité (prioritaire sur
+le gate `private`). `private` garde son sens vis-à-vis des **membres non-admin** (caché) ;
+l'org_admin, lui, gouverne — cohérent avec `assertCanSetVisibility` qui réservait déjà
+PUBLIER à owner|org_admin, et avec la hiérarchie RBAC (ADR 0025 `org_admin ⊇ member`). Une
+page « sans propriétaire » reste **normale** pour du contenu d'org collectif (seul le combo
+`private` + `owner_id NULL` était dégénéré, et seule la migration pouvait le produire — une
+page créée par un humain via `create_page` reçoit toujours `owner_id = sub`).
+
+**Implémentation** : migration append-only `20260625161500_v3_org_admin_override.sql`
+(redéfinit `page_read_mode`, dont dérivent `is_page_accessible`/`accessible_page_ids`/
+`page_can_write`/RLS — zéro duplication). Test de régression dans `access.v3.test.ts`
+(alice org_admin lit+écrit+dé-privatise une page privée de bob). Appliquée prod v3 le 2026-06-26.
