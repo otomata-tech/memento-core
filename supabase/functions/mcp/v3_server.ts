@@ -17,7 +17,7 @@ import {
   authenticate, protectedResourceMetadata, wwwAuthenticate, isDiscoveryPath, authServerMetadata,
 } from "../_shared/auth.ts";
 import {
-  LIST_KINDS, v3Apply, v3Count, v3Get, v3List, v3Load, v3ProposeChanges,
+  LIST_KINDS, v3Apply, v3Count, v3Digest, v3Get, v3List, v3Load, v3ProposeChanges,
   v3ReviewIngestion, v3Search, v3Share,
 } from "./v3.ts";
 
@@ -83,6 +83,12 @@ export function buildV3Server(sub: string): McpServer {
     inputSchema: { ingestionId: z.string() },
     // deno-lint-ignore no-explicit-any
   }, guarded((a) => v3Apply(sub, a as any)));
+
+  server.registerTool("digest", {
+    description: "Delta déterministe de la base sur N jours (pages & décisions récentes, décisions ouvertes, révisions). 0 résumé serveur — l'agent habille.",
+    inputSchema: { base: z.string().optional(), sinceDays: z.number().int().min(1).max(90).optional() },
+    // deno-lint-ignore no-explicit-any
+  }, guarded((a) => v3Digest(sub, a as any)));
 
   server.registerTool("review_ingestion", {
     description: "Décision de Revue sur une proposition (Pages) : reject ou send_back (renvoi à l'agent + note). L'accept = apply.",

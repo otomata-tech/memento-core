@@ -25,6 +25,7 @@ import { search as searchV3 } from "../_shared/search.v3.ts";
 import { embedTexts } from "../_shared/embed.v3.ts";
 import { defaultDeps, resolveMention, resolvePageEntities } from "../_shared/entities.ts";
 import { indexPage } from "../_shared/indexing.v3.ts";
+import { runDigest, type Digest } from "../_shared/digest.v3.ts";
 import type {
   LoadResult, SearchHit, EntityRef, ProposeOp, TreeNode,
 } from "../../../server/src/mcp-contract.v3.ts";
@@ -427,6 +428,15 @@ export function v3ReviewIngestion(
       where id = ${args.ingestionId}::uuid`);
     await logRevision(tx, ing.base_id, "ingestion", ing.id, args.decision, args.reviewNote ?? "", sub, null, null, ing.id);
     return { status: newStatus };
+  });
+}
+
+// ── Verbe digest : delta déterministe de l'org sur N jours (CDC §9, 0 LLM serveur) ──
+export function v3Digest(sub: string, args: { base?: string; sinceDays?: number }): Promise<Digest> {
+  return withCurrentSub(sub, async (tx) => {
+    const baseId = await resolveBaseId(tx, args.base);
+    const orgId = await orgIdOfBase(tx, baseId);
+    return runDigest(orgId, { sinceDays: args.sinceDays });
   });
 }
 
