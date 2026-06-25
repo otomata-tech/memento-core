@@ -96,8 +96,8 @@ export const apiV3 = {
     get<PageDetail>("/get", { id, kind: "page", include: include.join(",") }),
   getEntity: (id: string, include: GetInclude[] = ["backlinks"]) =>
     get<EntityDetail>("/get", { id, kind: "entity", include: include.join(",") }),
-  list: <T = unknown>(kind: ListKind, opts: { base?: string; filters?: Record<string, unknown>; limit?: number } = {}) =>
-    get<ListResult<T>>("/list", { kind, base: opts.base, filters: opts.filters ? JSON.stringify(opts.filters) : undefined, limit: opts.limit }),
+  list: <T = unknown>(kind: ListKind, opts: { base?: string; filters?: Record<string, unknown>; cursor?: string; limit?: number } = {}) =>
+    get<ListResult<T>>("/list", { kind, base: opts.base, filters: opts.filters ? JSON.stringify(opts.filters) : undefined, cursor: opts.cursor, limit: opts.limit }),
   count: (kind: ListKind, opts: { base?: string; filters?: Record<string, unknown> } = {}) =>
     get<{ total: number }>("/count", { kind, base: opts.base, filters: opts.filters ? JSON.stringify(opts.filters) : undefined }),
   digest: (base?: string, sinceDays?: number) => get<Digest>("/digest", { base, sinceDays }),

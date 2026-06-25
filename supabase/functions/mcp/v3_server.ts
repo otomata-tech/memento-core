@@ -62,8 +62,8 @@ export function buildV3Server(sub: string): McpServer {
   }, guarded((a) => v3Get(sub, a as any)));
 
   server.registerTool("list", {
-    description: "Énumération déterministe (100% recall) sous accès. kind pages|entities|sources|ingestions|entity_review.",
-    inputSchema: { kind: z.enum(LIST_KINDS), base: z.string().optional(), filters: z.record(z.string(), z.any()).optional(), limit: z.number().int().min(1).max(200).optional() },
+    description: "Énumération déterministe (100% recall) sous accès. kind pages|entities|sources|ingestions|entity_review. `totalCount` = vrai total ; pagine au-delà de `limit` en repassant le `cursor` renvoyé.",
+    inputSchema: { kind: z.enum(LIST_KINDS), base: z.string().optional(), filters: z.record(z.string(), z.any()).optional(), cursor: z.string().optional(), limit: z.number().int().min(1).max(200).optional() },
     // deno-lint-ignore no-explicit-any
   }, guarded((a) => v3List(sub, a as any)));
 

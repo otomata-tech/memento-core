@@ -212,16 +212,21 @@ function listQuery(kind: ListKind, baseId: string, orgId: string, filters: Recor
 }
 
 export function v3List(
-  sub: string, args: { kind: ListKind; base?: string; filters?: Record<string, unknown>; limit?: number },
+  sub: string, args: { kind: ListKind; base?: string; filters?: Record<string, unknown>; cursor?: string; limit?: number },
 ): Promise<{ items: unknown[]; totalCount: number; cursor: string | null }> {
   const limit = Math.min(Math.max(args.limit ?? 50, 1), 200);
+  // Curseur = offset opaque (ORDER BY stable dans listQuery) → 100% recall au-delà de la limite.
+  const offset = Math.max(0, Math.trunc(Number(args.cursor ?? 0)) || 0);
   return withCurrentSub(sub, async (tx) => {
     const baseId = await resolveBaseId(tx, args.base);
     await assertAccess(sub, { baseId });
     const orgId = await orgIdOfBase(tx, baseId);
-    const items = rows(await tx.execute(sql`${listQuery(args.kind, baseId, orgId, args.filters ?? {})} limit ${limit + 1}`));
+    const q = listQuery(args.kind, baseId, orgId, args.filters ?? {});
+    const items = rows(await tx.execute(sql`${q} limit ${limit + 1} offset ${offset}`));
     const hasMore = items.length > limit;
-    return { items: items.slice(0, limit), totalCount: items.length, cursor: hasMore ? "more" : null };
+    // totalCount = VRAI total (pas la taille de page) ; le curseur = offset de la page suivante.
+    const totalCount = one<{ n: number }>(await tx.execute(sql`select count(*)::int n from (${q}) c`)).n;
+    return { items: items.slice(0, limit), totalCount, cursor: hasMore ? String(offset + limit) : null };
   });
 }
 

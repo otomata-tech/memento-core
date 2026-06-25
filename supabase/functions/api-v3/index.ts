@@ -92,6 +92,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
             kind: (q.get("kind") ?? "pages") as any,
             base: q.get("base") ?? undefined,
             filters: filters ? JSON.parse(filters) : undefined,
+            cursor: q.get("cursor") ?? undefined,
             limit: limit ? Number(limit) : undefined,
           });
           break;
