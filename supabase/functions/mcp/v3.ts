@@ -407,6 +407,29 @@ export async function v3Apply(sub: string, args: { ingestionId: string }): Promi
   return { status };
 }
 
+// ── Verbe review_ingestion : décisions de Revue Pages (reject / renvoi) ────────
+// L'accept = `apply` ; ici les 2 autres issues d'une revue (CDC §8). Référent/admin (write).
+// Idempotent : sur un statut terminal (APPLIED/REJECTED) → no-op.
+export function v3ReviewIngestion(
+  sub: string,
+  args: { ingestionId: string; decision: "reject" | "send_back"; reviewNote?: string },
+): Promise<{ status: string }> {
+  return withCurrentSub(sub, async (tx) => {
+    const ing = one<{ id: string; base_id: string; status: string }>(await tx.execute(sql`
+      select id, base_id, status from mem_ingestions where id = ${args.ingestionId}::uuid`));
+    if (!ing) throw new Error("ingestion not found");
+    await assertAccess(sub, { baseId: ing.base_id }, { write: true });
+    if (["APPLIED", "REJECTED"].includes(ing.status)) return { status: ing.status }; // terminal
+    const newStatus = args.decision === "reject" ? "REJECTED" : "CHANGES_REQUESTED";
+    await tx.execute(sql`
+      update mem_ingestions set status = ${newStatus}::mem_ingestion_status,
+        review_note = ${args.reviewNote ?? null}, decided_by = ${sub}, decided_at = now(), claimed_at = null
+      where id = ${args.ingestionId}::uuid`);
+    await logRevision(tx, ing.base_id, "ingestion", ing.id, args.decision, args.reviewNote ?? "", sub, null, null, ing.id);
+    return { status: newStatus };
+  });
+}
+
 // ── Verbe share : par page (visibilité OU grant user) ─────────────────────────
 export function v3Share(
   sub: string, args: { pageRef: string; to: { visibility: string } | { user: string; mode: string } },

@@ -17,7 +17,8 @@ import {
   authenticate, protectedResourceMetadata, wwwAuthenticate, isDiscoveryPath, authServerMetadata,
 } from "../_shared/auth.ts";
 import {
-  LIST_KINDS, v3Apply, v3Count, v3Get, v3List, v3Load, v3ProposeChanges, v3Search, v3Share,
+  LIST_KINDS, v3Apply, v3Count, v3Get, v3List, v3Load, v3ProposeChanges,
+  v3ReviewIngestion, v3Search, v3Share,
 } from "./v3.ts";
 
 const json = (data: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(data) }] });
@@ -82,6 +83,12 @@ export function buildV3Server(sub: string): McpServer {
     inputSchema: { ingestionId: z.string() },
     // deno-lint-ignore no-explicit-any
   }, guarded((a) => v3Apply(sub, a as any)));
+
+  server.registerTool("review_ingestion", {
+    description: "Décision de Revue sur une proposition (Pages) : reject ou send_back (renvoi à l'agent + note). L'accept = apply.",
+    inputSchema: { ingestionId: z.string(), decision: z.enum(["reject", "send_back"]), reviewNote: z.string().optional() },
+    // deno-lint-ignore no-explicit-any
+  }, guarded((a) => v3ReviewIngestion(sub, a as any)));
 
   server.registerTool("share", {
     description: "Partage par page : visibilité (private|org|public) OU grant user (read|write).",
