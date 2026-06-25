@@ -295,44 +295,48 @@ const TreeItem = defineComponent({
   flex-direction: column;
   gap: 2px;
 }
-.tree-item .children {
-  margin-left: 0.7rem;
+/* L'arbre est rendu par le composant TreeItem (fonction de rendu) → ses éléments
+   n'ont pas le data-v de ce SFC. On cible via :deep() depuis le conteneur `.tree`
+   (lui, scopé) sinon AUCUN de ces styles ne s'applique (hiérarchie plate, libellés
+   centrés par le défaut <button>). */
+.tree :deep(.children) {
+  margin-left: 0.6rem;
   border-left: 1px solid var(--color-hair, #e5e2dc);
-  padding-left: 0.5rem;
+  padding-left: 0.45rem;
 }
-.node-row {
+.tree :deep(.node-row) {
   display: flex;
   align-items: flex-start; /* le chevron reste en haut sur un titre à 2 lignes */
-  gap: 0.3rem;
+  gap: 0.25rem;
   border-radius: 5px;
 }
-.node-row:hover {
+.tree :deep(.node-row:hover) {
   background: var(--color-bg, #f3f1ec);
 }
-.node-row.active {
+.tree :deep(.node-row.active) {
   background: color-mix(in srgb, var(--color-primary, #b5532a) 12%, transparent);
 }
-.node-row.active > .node-label {
+.tree :deep(.node-row.active > .node-label) {
   color: var(--color-primary, #b5532a);
   font-weight: 600;
 }
-.toggle {
-  flex: 0 0 0.8rem;
-  width: 0.8rem;
+.tree :deep(.toggle) {
+  flex: 0 0 0.85rem;
+  width: 0.85rem;
   display: flex;
   justify-content: center;
   background: none;
   border: none;
   cursor: pointer;
   color: var(--color-mute, #6b6b6b);
-  font-size: 0.62rem;
-  padding: 0.34rem 0 0; /* aligne le chevron sur la 1re ligne du label */
+  font-size: 0.6rem;
+  padding: 0.36rem 0 0; /* aligne le chevron sur la 1re ligne du label */
   line-height: 1;
 }
-.toggle.spacer {
+.tree :deep(.toggle.spacer) {
   cursor: default;
 }
-.node-label {
+.tree :deep(.node-label) {
   flex: 1 1 auto;
   min-width: 0;
   text-align: left;
@@ -343,7 +347,7 @@ const TreeItem = defineComponent({
   font-size: 0.82rem;
   line-height: 1.32;
   color: var(--color-ink, #1a1a1a);
-  padding: 0.28rem 0.3rem;
+  padding: 0.26rem 0.3rem;
   border-radius: 4px;
   /* titres descriptifs longs : 2 lignes max, ellipsis — compact et scannable */
   display: -webkit-box;
