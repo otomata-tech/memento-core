@@ -61,8 +61,10 @@ async function run() {
   }
 
   // 3. section → page (arbre, par profondeur croissante)
-  const sections = await v2`select id, workspace_id, parent_id, title, summary, position, depth
-                            from mem_sections order by depth asc, position asc`;
+  const sections = await v2`select s.id, s.workspace_id, s.parent_id, s.title, s.summary, s.position, s.depth
+                            from mem_sections s join mem_workspaces w on w.id = s.workspace_id
+                            where w.archived_at is null
+                            order by s.depth asc, s.position asc`;
   for (const s of sections) {
     const baseId = baseByOrg.get((await v2`select org_id from mem_workspaces where id = ${s.workspace_id}`)[0].org_id)!;
     const parent = s.parent_id ? pageBySection.get(s.parent_id)! : pageByWorkspace.get(s.workspace_id)!;
@@ -74,7 +76,9 @@ async function run() {
 
   // 4. document → page (body = blocs concaténés, type→markdown)
   for (const d of await v2`select d.id, d.section_id, d.title, d.summary, d.status, d.position, s.workspace_id
-                           from mem_documents d join mem_sections s on s.id = d.section_id`) {
+                           from mem_documents d join mem_sections s on s.id = d.section_id
+                           join mem_workspaces w on w.id = s.workspace_id
+                           where w.archived_at is null`) {
     const baseId = baseByOrg.get((await v2`select org_id from mem_workspaces where id = ${d.workspace_id}`)[0].org_id)!;
     const parent = pageBySection.get(d.section_id)!;
     const blocks = await v2`select id, type, content from mem_blocks where document_id = ${d.id} order by position asc`;
@@ -120,6 +124,9 @@ async function run() {
     await v3`insert into mem_page_sources (page_id, source_id, locator) values (${page}, ${sid}, ${bs.locator})
              on conflict do nothing`;
   }
+
+  const archived = (await v2`select count(*)::int n from mem_workspaces where archived_at is not null`)[0].n;
+  if (archived) console.warn(`⚠️ ${archived} workspace(s) archivé(s) ignoré(s) (contenu non migré).`);
 
   return {
     bases: baseByOrg.size, workspaces: pageByWorkspace.size, sections: pageBySection.size,
