@@ -21,6 +21,7 @@
 // elle, n'est pas checkable (le SDK n'expose pas de .d.ts) — d'où la séparation.
 import { sql } from "drizzle-orm";
 import { assertAccess, assertCanSetVisibility, withCurrentSub, AccessError, safeErrorMessage } from "../_shared/access.v3.ts";
+import { ensurePersonalBaseV3 } from "../_shared/onboarding.v3.ts";
 import { search as searchV3 } from "../_shared/search.v3.ts";
 import { embedTexts } from "../_shared/embed.v3.ts";
 import { defaultDeps, resolveMention, resolvePageEntities } from "../_shared/entities.ts";
@@ -56,7 +57,8 @@ async function resolveBaseId(tx: Tx, base?: string): Promise<string> {
 // ── Verbe bases : les bases énumérables de l'appelant (amorçage UI) ───────────
 // Le front ne peut pas deviner un UUID de base → il appelle ce verbe en premier
 // pour amorcer le sélecteur (corrige le wart `base?` du contrat côté client).
-export function v3Bases(sub: string): Promise<{ bases: { id: string; name: string; orgId: string; role: string }[] }> {
+export async function v3Bases(sub: string): Promise<{ bases: { id: string; name: string; orgId: string; role: string }[] }> {
+  await ensurePersonalBaseV3(sub); // #70 : un nouvel inscrit obtient org perso + base → pas de cul-de-sac.
   return withCurrentSub(sub, async (tx) => {
     const bases = rows<{ id: string; name: string; orgId: string; role: string }>(await tx.execute(sql`
       select b.id, b.name, b.org_id as "orgId", m.role
@@ -81,8 +83,12 @@ async function logRevision(
 }
 
 // ── Verbe load : l'épine (guide + arbre N+2 + top entities + counts + etag) ────
-export function v3Load(sub: string, args: { base?: string; depth?: number }): Promise<LoadResult> {
+export async function v3Load(sub: string, args: { base?: string; depth?: number }): Promise<LoadResult> {
   const depth = Math.min(Math.max(args.depth ?? 2, 1), 4);
+  // Amorçage MCP-first (Claude appelle `load` d'abord) : sans base spécifiée, un nouvel
+  // inscrit dead-end sur « no accessible base ». Provisionne d'abord (#70). Hors hot-path :
+  // un load avec base explicite (cas répété) saute ce garde.
+  if (!args.base) await ensurePersonalBaseV3(sub);
   return withCurrentSub(sub, async (tx) => {
     const baseId = await resolveBaseId(tx, args.base);
     await assertAccess(sub, { baseId }); // membre de l'org
