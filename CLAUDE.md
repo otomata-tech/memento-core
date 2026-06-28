@@ -4,6 +4,22 @@ Knowledge substrate for agents, consumed via **MCP**. Typed blocks, sourced and 
 maintained by a propose-validate loop. See [`docs/principles.md`](docs/principles.md) for the why
 and [`docs/specs/knowledge-base.md`](docs/specs/knowledge-base.md) for the model + MCP surface.
 
+## Méthode de travail
+
+**Réponses** — courtes, droit au but, minimum de mots. Pas de récap de ce que l'user vient
+de dire, pas de "voici ce que j'ai fait", pas de tableaux/emojis décoratifs. Résultat seulement.
+
+**Avant de coder** —
+- **Surfacer les hypothèses, pas trancher en silence.** Demande ambiguë → nommer le doute,
+  proposer les options, demander.
+- **Edits chirurgicaux.** Chaque ligne tracée à la demande. Pas de cleanup adjacent ni de
+  refacto non demandé. Dead code repéré = mentionné, pas supprimé.
+- **Critères de succès vérifiables d'abord** : reformuler la tâche en checks concrets
+  (test qui reproduit le bug, `deno test` vert, `typecheck` propre) avant d'implémenter.
+- **Push back quand justifié** : approche plus simple ou dette évidente → le dire avant d'exécuter.
+- **Invariant d'archi touché → ADR** dans `docs/adr/` (suite 0001-0004), jamais en silence.
+- ⚠️ **Repo public** : anonymiser vaut pour TOUT commit/PR/exemple, pas seulement les ADR/tests.
+
 ## V3 — refonte page-centrée (construite sur `main`, NON déployée)
 
 Pivot majeur (ADR `docs/adr/0001-0003`) : **suppression des blocs et liens typés** → une page = prose pure (titre+description+corps), un arbre ; **entités** = objet de 1er ordre niveau org (NER serveur + logique/décision) ; **1 base/org** ; accès par page ; **8 verbes MCP** (`server/src/mcp-contract.v3.ts`). Fichiers `*.v3.ts` à côté de la v2 (db lazy ; v2 intacte jusqu'au cutover).
@@ -20,6 +36,8 @@ Pivot majeur (ADR `docs/adr/0001-0003`) : **suppression des blocs et liens typé
 - **How it's consumed**: an MCP connector (`mem_*` verbs, OAuth at `https://mcp.mento.cc/mcp`, doctrine-first) wired into claude.ai / ChatGPT / Mistral Le Chat.
 - **Companion**: `otomata-tech/memento-plugin` — Claude Code skills (`/memento:*`) for session-learning capture and propose-validate pushes to the KB.
 - Detailed prod deployment topology is operator-internal and lives outside this public doc.
+- **Mainteneurs** : Alexis & JB — 2 devs sur le repo ; coordonner avant un changement transverse (schéma, surface MCP, cutover v3).
+
 
 ## Stack
 
@@ -57,6 +75,33 @@ npm run build                        # vue-tsc + vite build
 # tests
 cd supabase/functions && deno test --allow-env --allow-net --allow-read _shared/
 ```
+
+## CI & avant de pusher
+
+Pas de lint serveur. Checks locaux avant push :
+- `cd supabase/functions && deno test --allow-env --allow-net --allow-read _shared/` (rejoués par `test.yml` sur PR + push `main`)
+- `cd server && npm run typecheck`
+- `cd app && npm run build` (vue-tsc — seule vérif TS du viewer)
+
+**Un push déclenche des déploiements selon la branche** (tous gated `repository_owner == otomata-tech` → un fork ne déploie pas la prod) :
+
+| Push sur | Paths | Effet |
+|---|---|---|
+| `main` | `supabase/functions/**`, `schema.ts`, `drizzle/**` | `db:migrate` **v2 sur la prod** PUIS deploy `mcp`+`api` |
+| `main` | `app/**` | build + deploy viewer → Cloudflare Pages |
+| `main` / PR | `supabase/**`, `server/**` | `test.yml` : deno test sur Postgres pgvector |
+| `memento-v3` | `supabase/functions/**` | deploy `api-v3`+`mcp-v3` — **AUCUNE migration DB** |
+| `memento-v3` | `app/**` | SSH otomata-0 → build+sync `/opt/memento-v3/dist` (Caddy) |
+| `memento-v3` | `ner/**` | SSH box NER → redeploy GLiNER |
+
+⚠️ **Branche courante = `memento-v3`** : un seul push peut déclencher 3 self-service deploys
+(functions-v3, app, NER). Les migrations v3 (`supabase/migrations/`) ne sont **jamais**
+auto-appliquées — manuel (cf. § V3).
+
+**Gate local en une commande** — `bash scripts/test-local.sh` rejoue tout le filet avant un push
+(DB locale migrée v3 → `deno test _shared/` DB-backed → typecheck server → build app).
+Indispensable pour un push **direct** sur `memento-v3` (aucun test côté CI). Prérequis one-shot
+(Docker lancé + Deno + Supabase CLI dans le PATH) : installeurs par OS en tête du script.
 
 ## Conventions
 
