@@ -30,10 +30,12 @@ cd "$(dirname "$0")/.."  # racine du repo, quel que soit le cwd d'appel
 DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
 export DATABASE_URL
 
-# Scope des tests Deno = celui de la CI (test.yml). On N'inclut PAS mcp/*.test.ts :
-# ces tests importent le SDK MCP dont le .d.ts manque du cache Deno en local →
-# le type-check de `deno test` échouerait (cf. CLAUDE.md). La CI les exclut aussi.
-DENO_TEST_PATH="${DENO_TEST_PATH:-_shared/}"
+# Scope = les tests v3 : ce script provisionne le schéma v3 (`supabase db reset`),
+# donc les tests v2 (load/onboarding) casseraient contre lui — ils vivent dans le job
+# v2 de la CI. Non quoté → le shell développe le glob (dans supabase/functions). On
+# n'inclut pas mcp/*.test.ts (SDK MCP .d.ts absent du cache Deno local, cf. CLAUDE.md) :
+# c'est le même périmètre que le job v3-integration de test.yml.
+DENO_TEST_PATH="${DENO_TEST_PATH:-_shared/*.v3.test.ts}"
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "✗ '$1' introuvable dans le PATH — voir les prérequis en tête de ce script."; exit 1; }; }
 need supabase; need deno; need npm; need docker
@@ -45,7 +47,7 @@ supabase db reset              # rejoue supabase/migrations/* sur la DB locale
 echo "== 2/4 · Tests Edge Functions (deno, DB-backed) =="
 (
   cd supabase/functions
-  deno test --allow-env --allow-net --allow-read "$DENO_TEST_PATH"
+  deno test --allow-env --allow-net --allow-read $DENO_TEST_PATH
 )
 
 echo "== 3/4 · Typecheck Node (schéma Drizzle + outillage) =="
