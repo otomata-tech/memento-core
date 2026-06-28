@@ -256,6 +256,7 @@ const TreeItem = defineComponent({
         :error="pageError"
         :has-selection="!!activeId"
         @open="openPage"
+        @updated="loadPage(activeId)"
       />
     </div>
 
@@ -295,6 +296,7 @@ const TreeItem = defineComponent({
           :has-selection="!!activeId"
           :bordered="true"
           @open="openPage"
+          @updated="loadPage(activeId)"
         />
       </div>
     </div>

@@ -4,12 +4,14 @@
  * nav (Pages / Recherche / Boîte de réception). Les vues s'affichent dans <router-view>.
  * Charge les bases au montage ; le choix est partagé via `../../v3/base`.
  */
-import { onMounted } from "vue";
+import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { bases, currentBase, basesLoaded, loadBases, setBase } from "../../v3/base";
 import { supabase } from "../../auth";
+import CommandPalette from "./CommandPalette.vue";
 
 const router = useRouter();
+const palette = ref<InstanceType<typeof CommandPalette> | null>(null);
 
 onMounted(async () => {
   try { await loadBases(); }
@@ -44,6 +46,14 @@ async function signOut() {
         <router-link to="/v3/org" active-class="on">Organisation</router-link>
         <router-link to="/v3/connector" active-class="on">Connecteur</router-link>
       </nav>
+      <button
+        class="cmdk-hint"
+        title="Palette de commandes (Ctrl/⌘ + K)"
+        aria-label="Ouvrir la palette de commandes"
+        @click="palette?.open()"
+      >
+        <span class="cmdk-k">⌘K</span>
+      </button>
       <button class="signout" @click="signOut">Déconnexion</button>
     </header>
     <main class="content">
@@ -51,6 +61,7 @@ async function signOut() {
       <p v-else-if="basesLoaded" class="empty">Aucune base de connaissances accessible avec ce compte.</p>
       <p v-else class="empty">Chargement…</p>
     </main>
+    <CommandPalette ref="palette" />
   </div>
 </template>
 
@@ -66,7 +77,10 @@ async function signOut() {
 .nav a { padding: 6px 12px; color: var(--color-mute, #6b6b6b); text-decoration: none; font-size: 14px; border-radius: 4px; }
 .nav a:hover { background: var(--color-bg, #f3f1ec); }
 .nav a.on { color: var(--color-ink, #1a1a1a); font-weight: 600; background: var(--color-bg, #f3f1ec); }
-.signout { margin-left: auto; border: 1px solid var(--color-hair, #e5e2dc); background: none; color: var(--color-mute, #6b6b6b); padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.cmdk-hint { margin-left: auto; border: 1px solid var(--color-hair, #e5e2dc); background: var(--color-bg, #faf9f7); color: var(--color-mute, #6b6b6b); padding: 5px 9px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+.cmdk-hint:hover { border-color: var(--color-primary, #b5532a); color: var(--color-primary, #b5532a); }
+.cmdk-k { font-family: var(--font-mono, monospace); letter-spacing: 0.02em; }
+.signout { border: 1px solid var(--color-hair, #e5e2dc); background: none; color: var(--color-mute, #6b6b6b); padding: 6px 12px; font-size: 13px; cursor: pointer; }
 .content { padding: 24px 22px; max-width: 1100px; margin: 0 auto; }
 .empty { color: var(--color-mute, #6b6b6b); padding: 40px 0; text-align: center; }
 </style>

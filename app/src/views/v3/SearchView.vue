@@ -131,13 +131,14 @@ function fmtDate(iso: string): string {
         </div>
 
         <ul v-if="hit.entities.length" class="entities">
-          <li
-            v-for="e in hit.entities"
-            :key="e.id"
-            class="badge entity"
-            :class="e.type"
-            :title="ENTITY_LABEL[e.type]"
-          >{{ e.label }}</li>
+          <li v-for="e in hit.entities" :key="e.id" class="entity-item">
+            <router-link
+              class="badge entity"
+              :class="e.type"
+              :to="`/v3/entity/${e.id}`"
+              :title="ENTITY_LABEL[e.type]"
+            >{{ e.label }}</router-link>
+          </li>
         </ul>
       </li>
     </ul>
@@ -316,9 +317,13 @@ function fmtDate(iso: string): string {
   padding: 0;
   list-style: none;
 }
+.entity-item { display: inline-flex; }
 .entity {
   color: #fff;
+  text-decoration: none;
+  cursor: pointer;
 }
+.entity:hover { filter: brightness(1.08); }
 .entity.personne {
   background: #3b6ea5;
 }

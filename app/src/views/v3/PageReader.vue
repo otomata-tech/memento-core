@@ -4,10 +4,11 @@
  * colonnes de PagesView. Présentation pure : reçoit la page (getPage) + l'état de
  * chargement, émet `open` pour naviguer vers une sous-page. Markdown sanitisé.
  */
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import type { PageDetail, EntityType } from "../../api.v3";
+import type { PageDetail, EntityType, Visibility } from "../../api.v3";
+import SharePanel from "./SharePanel.vue";
 
 const props = defineProps<{
   page: PageDetail | null;
@@ -16,13 +17,67 @@ const props = defineProps<{
   hasSelection: boolean;
   bordered?: boolean;
 }>();
-const emit = defineEmits<{ open: [id: string] }>();
+const emit = defineEmits<{ open: [id: string]; updated: [] }>();
+
+// Panneau Partage (wireframe écran 6), ouvert depuis la topline.
+const shareOpen = ref(false);
+// La visibilité a-t-elle changé pendant que le panneau était ouvert ?
+const shareDirty = ref(false);
+function onShareUpdated() {
+  // Changement de visibilité côté serveur : on rafraîchit le parent à la
+  // FERMETURE du panneau (pas pendant — un re-fetch démonterait le panneau et
+  // casserait le multi-invite). Une invitation, elle, n'émet rien (page inchangée).
+  shareDirty.value = true;
+}
+function closeShare() {
+  shareOpen.value = false;
+  if (shareDirty.value) {
+    shareDirty.value = false;
+    emit("updated");
+  }
+}
+// Le panneau est borné à la page affichée : on le ferme si la page change
+// (l'instance PageReader est réutilisée d'une page à l'autre, sans :key).
+watch(
+  () => props.page?.id,
+  () => {
+    shareOpen.value = false;
+    shareDirty.value = false;
+  },
+);
+
+// Libellés FR (alignés sur SharePanel) pour la topline.
+const VIS_LABELS: Record<Visibility, string> = {
+  private: "Privé",
+  org: "Organisation",
+  public: "Public",
+};
+const STATUS_LABELS: Record<string, string> = {
+  active: "Active",
+  deprecated: "Obsolète",
+};
 
 const renderedBody = computed(() => {
   if (!props.page?.body) return "";
   const html = marked.parse(props.page.body) as string;
   return DOMPurify.sanitize(html);
 });
+
+// Sources : n'expose en lien que les schémas sûrs (http/https/mailto). Un `src.uri`
+// du type javascript:/data: est rendu en texte, jamais en href cliquable (anti-XSS).
+function safeHref(uri: string | null): string | null {
+  if (!uri) return null;
+  try {
+    // Sans base : un uri sans schéma jette → fallback texte (pas de faux lien same-origin).
+    const proto = new URL(uri).protocol;
+    return proto === "http:" || proto === "https:" || proto === "mailto:" ? uri : null;
+  } catch {
+    return null;
+  }
+}
+const sources = computed(() =>
+  (props.page?.sources ?? []).map((s) => ({ ...s, href: safeHref(s.uri) })),
+);
 
 const ENTITY_LABELS: Record<EntityType, string> = {
   personne: "Personne",
@@ -52,9 +107,10 @@ function entityClass(type: EntityType): string {
 
     <article v-else class="page">
       <div class="topline small muted">
-        <span class="status-pill">{{ page.status }}</span>
-        <span class="visibility-pill">{{ page.visibility }}</span>
+        <span class="status-pill">{{ STATUS_LABELS[page.status] ?? page.status }}</span>
+        <span class="visibility-pill">{{ VIS_LABELS[page.visibility] ?? page.visibility }}</span>
         <span v-if="page.occurred_at">· {{ page.occurred_at }}</span>
+        <button type="button" class="share-btn" @click="shareOpen = true">Partager</button>
       </div>
 
       <h1 class="title">{{ page.title }}</h1>
@@ -75,14 +131,14 @@ function entityClass(type: EntityType): string {
       </section>
 
       <!-- Sources -->
-      <section v-if="page.sources?.length" class="block">
+      <section v-if="sources.length" class="block">
         <h2 class="section-title">Sources</h2>
         <ul class="source-list">
-          <li v-for="src in page.sources" :key="src.id">
-            <a v-if="src.uri" :href="src.uri" target="_blank" rel="noopener noreferrer" class="link">{{
+          <li v-for="src in sources" :key="src.id">
+            <a v-if="src.href" :href="src.href" target="_blank" rel="noopener noreferrer" class="link">{{
               src.title || src.uri
             }}</a>
-            <span v-else class="source-title">{{ src.title || src.kind }}</span>
+            <span v-else class="source-title">{{ src.title || src.uri || src.kind }}</span>
             <span v-if="src.locator" class="muted small"> ({{ src.locator }})</span>
             <p v-if="src.citation" class="citation muted small">« {{ src.citation }} »</p>
           </li>
@@ -94,11 +150,21 @@ function entityClass(type: EntityType): string {
         <h2 class="section-title">Entités</h2>
         <ul class="entity-list inline">
           <li v-for="ent in page.entities" :key="ent.id">
-            <span :class="entityClass(ent.type)">{{ ENTITY_LABELS[ent.type] }}</span>
-            <span class="entity-label">{{ ent.label }}</span>
+            <router-link :to="`/v3/entity/${ent.id}`" class="entity-link">
+              <span :class="entityClass(ent.type)">{{ ENTITY_LABELS[ent.type] }}</span>
+              <span class="entity-label">{{ ent.label }}</span>
+            </router-link>
           </li>
         </ul>
       </section>
+
+      <SharePanel
+        v-if="shareOpen"
+        :page-id="page.id"
+        :current-visibility="page.visibility"
+        @close="closeShare"
+        @updated="onShareUpdated"
+      />
     </article>
   </main>
 </template>
@@ -139,6 +205,18 @@ function entityClass(type: EntityType): string {
   border: 1px solid var(--color-hair, #e5e2dc);
   text-transform: capitalize;
 }
+.share-btn {
+  margin-left: auto;
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--color-hair, #e5e2dc);
+  border-radius: 999px;
+  background: var(--color-surface, #fff);
+  color: var(--color-ink, #1a1a1a);
+  cursor: pointer;
+}
+.share-btn:hover { border-color: var(--color-primary, #b5532a); color: var(--color-primary, #b5532a); }
 .title {
   font-family: var(--font-display, serif);
   font-size: 2rem;
@@ -213,6 +291,15 @@ function entityClass(type: EntityType): string {
   gap: 0.4rem;
   font-size: 0.85rem;
 }
+.entity-link {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
+.entity-link:hover .entity-label { color: var(--color-primary, #b5532a); text-decoration: underline; }
 .entity-label {
   overflow: hidden;
   text-overflow: ellipsis;

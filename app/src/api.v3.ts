@@ -53,6 +53,8 @@ export interface Digest {
   recentDecisions: unknown[]; openDecisions: unknown[];
   revisions: { targetType: string; op: string; actor: string; at: string }[];
 }
+// NB : `page.entities` (badges entités) est peuplé côté serveur via include "backlinks"
+// (il n'y a pas de membre "entities" dédié) → ne pas retirer "backlinks" du défaut de getPage.
 export type GetInclude = "children" | "backlinks" | "sources";
 
 // ── Admin org/équipe (verbe unique `admin`, issue #71) ────────────────────────
@@ -72,7 +74,9 @@ export interface InviteResult {
 export type ProposeOp =
   | { op: "create_page"; payload: { parentId: string | null; title: string; description: string; body?: string } }
   | { op: "update_page"; payload: { pageId: string; mode: "append" | "replace"; title?: string; description?: string; body?: string } }
-  | { op: "set_visibility"; payload: { pageId: string; visibility: Visibility } };
+  | { op: "set_visibility"; payload: { pageId: string; visibility: Visibility } }
+  | { op: "merge_entities"; payload: { keep: string; drop: string } }
+  | { op: "confirm_distinct"; payload: { a: string; b: string } };
 
 // ── Transport ─────────────────────────────────────────────────────────────────
 async function authHeader(): Promise<Record<string, string>> {

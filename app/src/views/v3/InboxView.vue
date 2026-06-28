@@ -10,6 +10,7 @@ import { useRouter } from "vue-router";
 import { apiV3 } from "../../api.v3";
 import type { IngestionRow, Digest } from "../../api.v3";
 import { currentBase } from "../../v3/base";
+import EntityReviewCard, { type EntityReviewItem } from "./EntityReviewCard.vue";
 
 const router = useRouter();
 
@@ -29,6 +30,36 @@ const sendBackNote = ref("");
 // Encart activité récente (best-effort).
 const digest = ref<Digest | null>(null);
 const digestOpen = ref(false);
+
+// Onglet courant de la Revue : Pages (ingestions) | Entités (quasi-doublons).
+const scope = ref<"pages" | "entities">("pages");
+const entityItems = ref<EntityReviewItem[]>([]);
+const entityLoading = ref(false);
+const entityError = ref<string | null>(null);
+
+async function loadEntityReview() {
+  if (!currentBase.value) {
+    entityItems.value = [];
+    return;
+  }
+  entityLoading.value = true;
+  entityError.value = null;
+  try {
+    const res = await apiV3.list<EntityReviewItem>("entity_review", {
+      base: currentBase.value,
+      limit: 100,
+    });
+    entityItems.value = res.items;
+  } catch (e) {
+    entityError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    entityLoading.value = false;
+  }
+}
+
+function onEntityResolved(id: string) {
+  entityItems.value = entityItems.value.filter((i) => i.id !== id);
+}
 
 async function loadInbox() {
   if (!currentBase.value) {
@@ -75,6 +106,7 @@ function dropRow(id: string) {
 
 async function accept(row: IngestionRow) {
   if (busy.value[row.id]) return;
+  error.value = null;
   busy.value = { ...busy.value, [row.id]: true };
   try {
     await apiV3.apply(row.id);
@@ -90,6 +122,7 @@ async function accept(row: IngestionRow) {
 
 async function reject(row: IngestionRow) {
   if (busy.value[row.id]) return;
+  error.value = null;
   busy.value = { ...busy.value, [row.id]: true };
   try {
     await apiV3.review(row.id, "reject");
@@ -115,6 +148,7 @@ function cancelSendBack() {
 
 async function confirmSendBack(row: IngestionRow) {
   if (busy.value[row.id]) return;
+  error.value = null;
   busy.value = { ...busy.value, [row.id]: true };
   try {
     await apiV3.review(row.id, "send_back", sendBackNote.value.trim() || undefined);
@@ -157,11 +191,13 @@ function openPage(id: string) {
 watch(currentBase, () => {
   loadInbox();
   loadDigest();
+  loadEntityReview();
 });
 
 onMounted(() => {
   loadInbox();
   loadDigest();
+  loadEntityReview();
 });
 </script>
 
@@ -170,11 +206,32 @@ onMounted(() => {
     <header class="head">
       <h1>Boîte de réception</h1>
       <p class="sub">Propositions en attente de revue dans cette base.</p>
+      <div class="tabs" role="group" aria-label="Type de revue">
+        <button
+          type="button"
+          class="tab"
+          :class="{ on: scope === 'pages' }"
+          :aria-pressed="scope === 'pages'"
+          @click="scope = 'pages'"
+        >
+          Pages <span class="cnt">{{ items.length }}</span>
+        </button>
+        <button
+          type="button"
+          class="tab"
+          :class="{ on: scope === 'entities' }"
+          :aria-pressed="scope === 'entities'"
+          @click="scope = 'entities'"
+        >
+          Entités <span class="cnt">{{ entityItems.length }}</span>
+        </button>
+      </div>
     </header>
 
-    <p v-if="flash" class="flash">{{ flash }}</p>
-    <p v-if="error" class="err">{{ error }}</p>
+    <p v-if="flash" class="flash" role="status" aria-live="polite">{{ flash }}</p>
+    <p v-if="error && scope === 'pages'" class="err" role="alert">{{ error }}</p>
 
+    <template v-if="scope === 'pages'">
     <p v-if="loading" class="muted">Chargement…</p>
 
     <ul v-else-if="items.length" class="list">
@@ -215,6 +272,25 @@ onMounted(() => {
       <p class="empty-title">Rien à revoir</p>
       <p class="muted">Aucune proposition en attente dans cette base.</p>
     </div>
+    </template>
+
+    <template v-else>
+      <p v-if="entityError" class="err" role="alert">{{ entityError }}</p>
+      <p v-if="entityLoading" class="muted">Chargement…</p>
+      <div v-else-if="entityItems.length" class="list">
+        <EntityReviewCard
+          v-for="it in entityItems"
+          :key="it.id"
+          :item="it"
+          :base="currentBase"
+          @resolved="onEntityResolved"
+        />
+      </div>
+      <div v-else class="empty">
+        <p class="empty-title">Aucun doublon à arbitrer</p>
+        <p class="muted">Memento n'a détecté aucune entité en double dans cette base.</p>
+      </div>
+    </template>
 
     <section v-if="digest && digest.recentPages.length" class="digest">
       <button class="digest-toggle" @click="digestOpen = !digestOpen">
@@ -245,6 +321,36 @@ onMounted(() => {
 }
 .sub { color: var(--color-mute, #6b6b6b); margin: 0; }
 .muted { color: var(--color-mute, #6b6b6b); }
+
+.tabs {
+  display: inline-flex;
+  margin-top: 0.9rem;
+  border: 1px solid var(--color-hair, #e5e2dc);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.tab {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.85rem;
+  background: var(--color-surface, #fff);
+  color: var(--color-mute, #6b6b6b);
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.tab + .tab { border-left: 1px solid var(--color-hair, #e5e2dc); }
+.tab.on { background: var(--color-primary, #b5532a); color: #fff; }
+.tab .cnt {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.08);
+}
+.tab.on .cnt { background: rgba(255, 255, 255, 0.25); }
 
 .flash {
   background: var(--color-bg, #faf9f7);
