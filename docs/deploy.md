@@ -50,11 +50,11 @@ Onglet **Actions** : suivre le run. Vert = déployé. Puis smoke rapide :
 
 - **C'est la prod.** Pas de push exploratoire ; `bash scripts/test-local.sh` d'abord.
 - **Migrations DB v3 : jamais via la CI.** Les tables v3 vivent dans le **schéma
-  `memento_v3`** du projet de prod (v2 reste dans `public` jusqu'à son retrait).
+  `memento_v3`** du projet de prod (v2 retiré, `public` vide ; extensions dans `extensions`).
   Une migration `supabase/migrations/*.sql` s'applique **à la main, transformée**
   (search_path + FK vers `memento_v3` — procédure dans l'issue #58). Un changement
   de schéma déployé sans sa migration casse les functions : signale-le avant de pousser.
-- **Graphe v3 = `db.v3.ts`**, jamais `db.ts` (qui pointe le schéma v2 `public`).
+- **Graphe v3 = `db.v3.ts`**, jamais `db.ts` (défaut `public`, désormais vide).
 - **Ne réactive pas « Deploy viewer to Cloudflare Pages »** (workflow `main`,
   désactivé) : il écraserait le front v3 (même projet CF Pages).
 - Le projet est **public** (open-core) : ne commite jamais de secret ni de nom client.
