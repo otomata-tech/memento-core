@@ -126,3 +126,11 @@ Set as platform secrets (never committed — repo is public; read via `Deno.env.
 - `MEMENTO_APP_URL` — app base for invite redirects + viewer links (`me.mento.cc`).
 - `MEMENTO_PROVISION_BEARER` — shared secret guarding `POST /federation/provision` (oto→memento).
 - `RESEND_API_KEY`, `MEMENTO_EMAIL_FROM` — transactional email (invitations). Memento generates the GoTrue action link without sending, then emails it itself via Resend (`_shared/email/`). Absent/failing ⇒ graceful fallback to a copyable invite link in the admin UI.
+
+## Docs
+- `principles.md` — le pourquoi (modèle page-centré, propose-valide, doctrine-first).
+- `specs/knowledge-base.md` — spec fondatrice (modèle + surface MCP).
+- `access-control.md` — modèle d'accès (visibilités par page, grants, héritage).
+- `connect-mcp.md` — brancher le connecteur MCP (OAuth, clients).
+- `deploy.md` — déployer la PROD (push `memento-v3`, garde-fous post-cutover).
+- `adr/` — décisions d'architecture (0001–0004).
