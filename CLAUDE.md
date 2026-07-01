@@ -22,7 +22,7 @@ de dire, pas de "voici ce que j'ai fait", pas de tableaux/emojis décoratifs. R�
 
 ## V3 — refonte page-centrée (**LIVE en prod depuis le 2026-06-28**, cutover #58)
 
-Pivot majeur (ADR `docs/adr/0001-0004`) : **suppression des blocs et liens typés** → une page = prose pure (titre+description+corps), un arbre ; **entités** = objet de 1er ordre niveau org (NER serveur + logique/décision) ; **1 base/org** ; accès par page ; **8 verbes MCP** (`server/src/mcp-contract.v3.ts`).
+Pivot majeur (ADR dans `docs/adr/`, suite 0001–0004) : **suppression des blocs et liens typés** → une page = prose pure (titre+description+corps), un arbre ; **entités** = objet de 1er ordre niveau org (NER serveur + logique/décision) ; **1 base/org** ; accès par page ; **8 verbes MCP** (`server/src/mcp-contract.v3.ts`).
 
 **Topologie post-cutover (consolidation in-project, runbook = issue #58, cutover + retrait v2 clos le 2026-07-02)** : v3 vit dans le **schéma PG dédié `memento_v3`** du projet Supabase de mento.cc (auth partagée avec ex-v2, c'était tout l'enjeu). **v2 est RETIRÉ** : schéma `public` droppé, ancien projet blue-green + staging memento-v3.oto.zone supprimés. `public` est désormais **vide** ; les extensions partagées (`vector`/`unaccent`/`pgcrypto` + FTS `french_unaccent`) vivent dans le schéma **`extensions`**. Backup v2 hors-ligne : `~/backups/memento-v2-*` (seul filet, plus de rollback vers v2). Prod = app **me.mento.cc** + connecteur **mcp.mento.cc** (CF Pages `memento-viewer` : SPA + Pages Functions `app/functions/` qui proxifient `/mcp`→`mcp-v3/mcp`, `/api`→`api-v3`).
 
